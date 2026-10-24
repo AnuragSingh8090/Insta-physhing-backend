@@ -1,9 +1,9 @@
 /**
  * File-backed log store for HTTP request logs.
  *
- * Stores every logged request as a JSON array inside logs/requests.json.
- * The whole array is kept in memory and flushed to disk on every write,
- * which is fine for a monitoring tool with moderate traffic.
+ * Logs are CLEARED on every server start so the monitor always shows
+ * only the current session's traffic. The JSON file is still written to
+ * disk on every write so it survives an unexpected crash mid-session.
  */
 const fs = require('fs');
 const path = require('path');
@@ -12,23 +12,22 @@ const LOG_DIR  = path.join(__dirname, '../../logs');
 const LOG_FILE = path.join(LOG_DIR, 'requests.json');
 const MAX_LOGS = 5000;
 
+/** ISO string recorded once when this module is first loaded (= server start). */
+const serverStartTime = new Date().toISOString();
+
 let logs   = [];
 let nextId = 1;
 
-/* ── Init: load existing file ──────────────────────────────────── */
+/* ── Init: wipe previous session's logs, start fresh ──────────── */
 (function init() {
   try {
     if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
-    if (fs.existsSync(LOG_FILE)) {
-      const raw = fs.readFileSync(LOG_FILE, 'utf8');
-      logs = JSON.parse(raw);
-      if (!Array.isArray(logs)) logs = [];
-      nextId = logs.reduce((mx, l) => Math.max(mx, l.id ?? 0), 0) + 1;
-    }
-    console.log(`📋 LogStore initialised — ${logs.length} existing log(s)`);
+    // Always clear on boot — we only want the current session
+    fs.writeFileSync(LOG_FILE, '[]');
+    console.log(`📋 LogStore initialised — fresh session (previous logs cleared)`);
   } catch (err) {
     console.error('📋 LogStore init error:', err.message);
-    logs = [];
+    logs   = [];
     nextId = 1;
   }
 })();
@@ -68,11 +67,11 @@ function deleteById(id) {
   return true;
 }
 
-/** Clear every log. */
+/** Clear every log for the current session. */
 function deleteAll() {
-  logs = [];
+  logs   = [];
   nextId = 1;
   persist();
 }
 
-module.exports = { getAll, add, deleteById, deleteAll };
+module.exports = { getAll, add, deleteById, deleteAll, serverStartTime };

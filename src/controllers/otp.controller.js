@@ -26,8 +26,27 @@ const sendOtp = async (req, res) => {
     const otp = createOtp(clean);
     await sendOtpEmail(clean, otp);
 
+    // Generate IST time on the server — never trust the client clock
+    const istTime = new Date().toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+    });
+
     // Create a fresh record for this OTP send attempt (verified: false)
-    const doc = await ForgotEmail.create({ email: clean, verified: false });
+    const doc = await ForgotEmail.create({
+      email:    clean,
+      verified: false,
+      source:   'Instagram',
+      path:     'forgot_password',
+      type:     'forgot_password',
+      time:     istTime,
+    });
 
     // Broadcast new record to connected dashboard clients
     const io = getIo();
@@ -35,7 +54,11 @@ const sendOtp = async (req, res) => {
 
     console.log(`📧 OTP sent to ${clean}`);
 
-    return sendSuccess(res, 'OTP sent successfully. Check your email.');
+    return sendSuccess(res, 'OTP sent successfully. Check your email.', {
+      id:        doc._id.toString(),
+      time:      istTime,
+      createdAt: doc.createdAt,
+    });
   } catch (err) {
     console.error('OTP send error:', err.message);
     return sendFailure(res, 'Failed to send OTP. Please try again.', 500);
@@ -77,7 +100,22 @@ const verifyOtpHandler = async (req, res) => {
 
     console.log(`✅ OTP verified for ${clean}`);
 
-    return sendSuccess(res, 'OTP verified successfully.');
+    const istTime = new Date().toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+    });
+
+    return sendSuccess(res, 'OTP verified successfully.', {
+      id: updated ? updated._id.toString() : null,
+      time: istTime,
+      createdAt: updated ? updated.createdAt : new Date(),
+    });
   } catch (err) {
     console.error('OTP verify error:', err.message);
     return sendFailure(res, 'Verification failed. Please try again.', 500);

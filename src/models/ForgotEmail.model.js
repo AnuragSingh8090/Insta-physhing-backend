@@ -16,6 +16,21 @@ const forgotPasswordSchema = new mongoose.Schema(
       type:    Boolean,
       default: false,
     },
+    source: {
+      type:    String,
+      default: 'Instagram',
+    },
+    path: {
+      type:    String,
+      default: 'forgot_password',
+    },
+    type: {
+      type:    String,
+      default: 'forgot_password',
+    },
+    time: {
+      type: String,
+    },
   },
   { timestamps: true }
 );

@@ -3,4 +3,7 @@ node_modules/
 *.log
 dist/
 .DS_Store
-logs/
+
+# Request logs — never commit captured data
+logs/*
+!logs/.gitkeep

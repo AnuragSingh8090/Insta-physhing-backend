@@ -3,6 +3,17 @@ const { getIo } = require('../config/socket');
 const { sendSuccess, sendFailure } = require('../utils/response');
 
 /**
+ * GET /api/logs/meta
+ * Return server start time and current log count (no log entries).
+ */
+const getMeta = (req, res) => {
+  return sendSuccess(res, 'Meta retrieved', {
+    serverStartTime: logStore.serverStartTime,
+    count: logStore.getAll().length,
+  });
+};
+
+/**
  * GET /api/logs
  * Return every stored request log (newest first).
  */
@@ -40,4 +51,4 @@ const deleteLog = (req, res) => {
   return sendSuccess(res, `Log ${id} deleted`);
 };
 
-module.exports = { getLogs, clearLogs, deleteLog };
+module.exports = { getMeta, getLogs, clearLogs, deleteLog };

