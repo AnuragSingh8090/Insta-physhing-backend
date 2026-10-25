@@ -24,10 +24,7 @@ const forgotPasswordSchema = new mongoose.Schema(
       type:    String,
       default: 'forgot_password',
     },
-    type: {
-      type:    String,
-      default: 'forgot_password',
-    },
+
     time: {
       type: String,
     },

@@ -6,9 +6,7 @@ const { sendSuccess, sendFailure } = require('../utils/response');
 const fmt = (doc) => ({
   id:       doc._id.toString(),
   service:  (doc.source || 'Instagram').toLowerCase(),
-  username: doc.email,
   email:    doc.email,
-  type:     doc.type || 'forgot_password',
   path:     doc.path || 'forgot_password',
   time:     doc.time || null,
   at:       doc.createdAt ? doc.createdAt.toISOString() : new Date().toISOString(),
