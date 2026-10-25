@@ -9,30 +9,14 @@ const { sendFailure } = require('./utils/response');
 const app = express();
 
 // ── CORS Configuration ────────────────────────────────────────
-const allowedOrigins = [
-  process.env.FRONTEND_URL_LOCAL || 'http://localhost:5173',
-  process.env.FRONTEND_URL_PRODUCTION,
-].filter(Boolean); // Remove undefined/null values
-
-const corsOptions = {
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or Postman)
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      console.warn(`CORS blocked origin: ${origin}`);
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
+// Allow all origins for maximum compatibility
+app.use(cors({
+  origin: '*',
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  credentials: true, // Allow cookies and authentication headers
-  optionsSuccessStatus: 200 // For legacy browser support
-};
-
-app.use(cors(corsOptions));
+  credentials: false,
+  optionsSuccessStatus: 200
+}));
 
 // ── Middleware ────────────────────────────────────────────────
 app.use(morgan('dev'));

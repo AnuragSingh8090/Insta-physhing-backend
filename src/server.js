@@ -9,24 +9,17 @@ const { setIo } = require('./config/socket');
 
 const PORT = process.env.PORT || 5000;
 
-// ── Allowed Origins for CORS ──────────────────────────────────
-const allowedOrigins = [
-  process.env.FRONTEND_URL_LOCAL || 'http://localhost:5173',
-  process.env.FRONTEND_URL_PRODUCTION,
-].filter(Boolean); // Remove undefined/null values
-
 const startServer = async () => {
   await connectDB();
 
   const server = http.createServer(app);
 
-  // ── Socket.IO with proper CORS ────────────────────────────────
+  // ── Socket.IO with CORS allowing all origins ──────────────────
   const io = new Server(server, {
     cors: {
-      origin: allowedOrigins.length > 0 ? allowedOrigins : '*',
+      origin: '*',
       methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
-      credentials: true,
-      allowedHeaders: ['Content-Type', 'Authorization']
+      credentials: false
     },
     transports: ['websocket', 'polling']
   });
@@ -44,7 +37,7 @@ const startServer = async () => {
     console.log(
       `🚀 Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`
     );
-    console.log(`📡 Allowed CORS origins:`, allowedOrigins.length > 0 ? allowedOrigins : ['*']);
+    console.log(`📡 CORS: Allowing all origins (*)`);
   });
 
   server.on('error', (err) => {
