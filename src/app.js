@@ -28,6 +28,14 @@ const requestLogger = require('./middlewares/requestLogger');
 app.use(requestLogger);
 
 // ── Routes ────────────────────────────────────────────────────
+// Root route - Server status check
+app.get('/', (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: 'API is running'
+  });
+});
+
 app.use('/api', apiRoutes);
 
 // ── 404 Handler ───────────────────────────────────────────────

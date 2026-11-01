@@ -13,7 +13,7 @@ const formatRecord = (record) => {
     deviceName: record.deviceName || '',
     address: record.address || '',
     notify: record.notify || {
-      type: 'Someone tried to sign in',
+      notifyType: 'Someone tried to sign in',
       schedule: false,
       scheduledAt: '',
       pendingId: null
@@ -96,7 +96,7 @@ exports.createRecord = async (req, res) => {
       deviceName: deviceName || '',
       address: address || '',
       notify: notify || {
-        type: 'Someone tried to sign in',
+        notifyType: 'Someone tried to sign in',
         schedule: false,
         scheduledAt: '',
         pendingId: null
@@ -152,7 +152,7 @@ exports.createBulkRecords = async (req, res) => {
         deviceName: r.deviceName || '',
         address: r.address || '',
         notify: r.notify || {
-          type: 'Someone tried to sign in',
+          notifyType: 'Someone tried to sign in',
           schedule: false,
           scheduledAt: '',
           pendingId: null
@@ -199,7 +199,14 @@ exports.updateRecord = async (req, res) => {
     if (avatar !== undefined) record.avatar = avatar;
     if (deviceName !== undefined) record.deviceName = deviceName;
     if (address !== undefined) record.address = address;
-    if (notify) record.notify = { ...record.notify, ...notify };
+    if (notify) {
+      record.notify = {
+        notifyType: notify.notifyType ?? record.notify.notifyType,
+        schedule: notify.schedule ?? record.notify.schedule,
+        scheduledAt: notify.scheduledAt ?? record.notify.scheduledAt,
+        pendingId: notify.pendingId ?? record.notify.pendingId,
+      };
+    }
 
     await record.save();
 
@@ -272,7 +279,7 @@ exports.deleteBulkRecords = async (req, res) => {
 exports.addNotificationLog = async (req, res) => {
   try {
     const { id } = req.params;
-    const { type, emailStatus, status } = req.body;
+    const { notifyType, emailStatus, status } = req.body;
 
     const record = await NotificationRecord.findById(id);
     if (!record) {
@@ -281,7 +288,7 @@ exports.addNotificationLog = async (req, res) => {
 
     // Add new log
     record.logs.unshift({
-      type: type || record.notify.type,
+      type: notifyType || record.notify.notifyType || 'Someone tried to sign in',
       sentAt: new Date(),
       emailStatus: emailStatus || 'success',
       status: status || 'sent'
@@ -304,27 +311,63 @@ exports.addNotificationLog = async (req, res) => {
   }
 };
 
-// Send notification (add log entry)
+// Send notification (add log entry and send email)
 exports.sendNotification = async (req, res) => {
   try {
     const { id } = req.params;
-    const { scheduled } = req.body;
+    const { notify } = req.body;
 
     const record = await NotificationRecord.findById(id);
     if (!record) {
       return sendFailure(res, 'Record not found', 404);
     }
 
+    // Determine if scheduled or immediate
+    const scheduleFlag = notify?.schedule === true || notify?.schedule === 'true';
+    const isScheduled = scheduleFlag && notify?.scheduledAt && new Date(notify.scheduledAt).getTime() > Date.now();
+
+    const resolvedType = notify?.notifyType || record.notify.notifyType || 'Someone tried to sign in';
+
     // Add notification log
     const logEntry = {
-      type: record.notify.type,
-      sentAt: scheduled ? new Date(record.notify.scheduledAt) : new Date(),
-      emailStatus: scheduled ? 'scheduled' : 'success',
+      type: resolvedType,
+      sentAt: isScheduled ? new Date(notify.scheduledAt) : new Date(),
+      emailStatus: isScheduled ? 'scheduled' : 'success',
       status: 'sent'
     };
 
     record.logs.unshift(logEntry);
+    
+    // Update notify if provided
+    if (notify) {
+      record.notify = {
+        notifyType: notify.notifyType ?? record.notify.notifyType,
+        schedule: notify.schedule ?? record.notify.schedule,
+        scheduledAt: notify.scheduledAt ?? record.notify.scheduledAt,
+        pendingId: notify.pendingId ?? record.notify.pendingId,
+      };
+    }
+    
     await record.save();
+
+    // Send actual email if not scheduled
+    if (!isScheduled) {
+      try {
+        const { sendSecurityAlertEmail } = require('../utils/mailer');
+        await sendSecurityAlertEmail(
+          record.email,
+          record.username || '',
+          resolvedType,
+          record.deviceName || '',
+          record.address || ''
+        );
+        console.log(`✅ Security alert email sent to ${record.email}`);
+      } catch (emailError) {
+        console.error('❌ Failed to send email:', emailError.message);
+        record.logs[0].emailStatus = 'failed';
+        await record.save();
+      }
+    }
 
     const formatted = formatRecord(record);
 
@@ -334,11 +377,11 @@ exports.sendNotification = async (req, res) => {
       io.emit('notificationRecordUpdated', formatted);
     }
 
-    sendSuccess(res, scheduled ? 'Notification scheduled successfully' : 'Notification sent successfully', { 
+    sendSuccess(res, isScheduled ? 'Notification scheduled successfully' : 'Notification sent successfully', { 
       record: formatted 
     });
   } catch (error) {
-    console.error('Error sending notification:', error);
+    console.error('❌ Error in sendNotification:', error);
     sendFailure(res, 'Failed to send notification', 500);
   }
 };

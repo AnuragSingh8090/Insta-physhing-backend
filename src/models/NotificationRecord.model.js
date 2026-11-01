@@ -57,7 +57,7 @@ const notificationRecordSchema = new mongoose.Schema({
   },
   // Notification settings
   notify: {
-    type: {
+    notifyType: {
       type: String,
       default: 'Someone tried to sign in'
     },
