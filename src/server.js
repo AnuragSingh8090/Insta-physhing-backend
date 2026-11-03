@@ -21,7 +21,8 @@ const startServer = async () => {
       methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
       credentials: false
     },
-    transports: ['websocket', 'polling']
+    transports: ['websocket', 'polling'],
+    maxHttpBufferSize: 50 * 1024 * 1024 // 50MB for large payloads
   });
 
   setIo(io);

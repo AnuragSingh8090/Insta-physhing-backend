@@ -126,7 +126,7 @@ const updateCredential = async (req, res) => {
     const io = getIo();
     if (io) io.emit('credentialUpdated', formatted);
 
-    return sendSuccess(res, 'Credential updated', { credential: formatted });
+    return sendSuccess(res, 'Credential updated', { id });
   } catch (error) {
     return sendFailure(res, error.message || 'Internal Server Error', 500);
   }

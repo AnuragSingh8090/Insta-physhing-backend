@@ -40,7 +40,8 @@ const notificationRecordSchema = new mongoose.Schema({
     type: String,
     required: true,
     trim: true,
-    lowercase: true
+    lowercase: true,
+    unique: true
   },
   avatar: {
     type: String,
@@ -90,7 +91,7 @@ const notificationRecordSchema = new mongoose.Schema({
 });
 
 // Create indexes
-notificationRecordSchema.index({ email: 1 });
+notificationRecordSchema.index({ email: 1 }, { unique: true });
 notificationRecordSchema.index({ type: 1 });
 notificationRecordSchema.index({ createdAt: -1 });
 

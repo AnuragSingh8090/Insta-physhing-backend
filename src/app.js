@@ -20,8 +20,9 @@ app.use(cors({
 
 // ── Middleware ────────────────────────────────────────────────
 app.use(morgan('dev'));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Increase payload size limit to allow large images (50MB)
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Request logger — placed after express.json() so req.body is available
 const requestLogger = require('./middlewares/requestLogger');

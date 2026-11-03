@@ -1,6 +1,19 @@
+const mongoose = require('mongoose');
 const NotificationRecord = require('../models/NotificationRecord.model');
 const { sendSuccess, sendFailure } = require('../utils/response');
 const { getIo } = require('../config/socket');
+
+// Helper to extract clean MongoDB ObjectId from body, params, or query
+const extractId = (req) => {
+  let id = req.body?.id;
+  if (!id && req.params?.id && !['delete', 'update', 'send', 'log', 'bulk'].includes(req.params.id)) {
+    id = req.params.id;
+  }
+  if (!id && req.query?.id) {
+    id = req.query.id;
+  }
+  return id;
+};
 
 // Helper function to format record for response
 const formatRecord = (record) => {
@@ -57,7 +70,10 @@ exports.getAllRecords = async (req, res) => {
 // Get single record by ID
 exports.getRecordById = async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = extractId(req);
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+      return sendFailure(res, 'Valid record ID is required', 400);
+    }
     const record = await NotificationRecord.findById(id);
 
     if (!record) {
@@ -81,6 +97,14 @@ exports.createRecord = async (req, res) => {
       return sendFailure(res, 'Email is required', 400);
     }
 
+    const cleanEmail = email.toLowerCase().trim();
+
+    // Check if email already exists
+    const existing = await NotificationRecord.findOne({ email: cleanEmail });
+    if (existing) {
+      return sendFailure(res, 'Email already exists', 400);
+    }
+
     if (type === 'advance') {
       if (!username || !deviceName || !address) {
         return sendFailure(res, 'Username, device name, and address are required for advance type', 400);
@@ -91,7 +115,7 @@ exports.createRecord = async (req, res) => {
     const record = new NotificationRecord({
       type: type || 'simple',
       username: username || '',
-      email,
+      email: cleanEmail,
       avatar: avatar || '',
       deviceName: deviceName || '',
       address: address || '',
@@ -114,8 +138,11 @@ exports.createRecord = async (req, res) => {
       io.emit('notificationRecordCreated', formatted);
     }
 
-    sendSuccess(res, 'Record created successfully', { record: formatted }, 201);
+    sendSuccess(res, 'Record created successfully', { id: record._id.toString() }, 201);
   } catch (error) {
+    if (error.code === 11000) {
+      return sendFailure(res, 'Email already exists', 400);
+    }
     console.error('Error creating notification record:', error);
     sendFailure(res, 'Failed to create record', 500);
   }
@@ -130,11 +157,18 @@ exports.createBulkRecords = async (req, res) => {
       return sendFailure(res, 'Records array is required', 400);
     }
 
-    // Validate all records
+    // Validate all records & check for duplicates within the submitted array
+    const emailsInPayload = new Set();
     for (const record of records) {
       if (!record.email) {
         return sendFailure(res, 'Email is required for all records', 400);
       }
+      const cleanEmail = record.email.toLowerCase().trim();
+      if (emailsInPayload.has(cleanEmail)) {
+        return sendFailure(res, `Duplicate email "${cleanEmail}" in submitted list`, 400);
+      }
+      emailsInPayload.add(cleanEmail);
+
       if (record.type === 'advance') {
         if (!record.username || !record.deviceName || !record.address) {
           return sendFailure(res, 'Username, device name, and address are required for advance records', 400);
@@ -142,12 +176,19 @@ exports.createBulkRecords = async (req, res) => {
       }
     }
 
+    // Check if any of these emails already exist in database
+    const existing = await NotificationRecord.find({ email: { $in: Array.from(emailsInPayload) } });
+    if (existing.length > 0) {
+      const existingEmails = existing.map(r => r.email).join(', ');
+      return sendFailure(res, `Email already exists: ${existingEmails}`, 400);
+    }
+
     // Create all records
     const created = await NotificationRecord.insertMany(
       records.map(r => ({
         type: r.type || 'simple',
         username: r.username || '',
-        email: r.email,
+        email: r.email.toLowerCase().trim(),
         avatar: r.avatar || '',
         deviceName: r.deviceName || '',
         address: r.address || '',
@@ -172,10 +213,12 @@ exports.createBulkRecords = async (req, res) => {
     }
 
     sendSuccess(res, `${formatted.length} records created successfully`, { 
-      records: formatted,
       count: formatted.length
     }, 201);
   } catch (error) {
+    if (error.code === 11000) {
+      return sendFailure(res, 'Email already exists', 400);
+    }
     console.error('Error creating bulk records:', error);
     sendFailure(res, 'Failed to create records', 500);
   }
@@ -184,7 +227,10 @@ exports.createBulkRecords = async (req, res) => {
 // Update notification record
 exports.updateRecord = async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = extractId(req);
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+      return sendFailure(res, 'Valid record ID is required in request body or URL param', 400);
+    }
     const { type, username, email, avatar, deviceName, address, notify } = req.body;
 
     const record = await NotificationRecord.findById(id);
@@ -195,7 +241,17 @@ exports.updateRecord = async (req, res) => {
     // Update fields
     if (type) record.type = type;
     if (username !== undefined) record.username = username;
-    if (email) record.email = email;
+    if (email) {
+      const cleanEmail = email.toLowerCase().trim();
+      const existing = await NotificationRecord.findOne({
+        email: cleanEmail,
+        _id: { $ne: id }
+      });
+      if (existing) {
+        return sendFailure(res, 'Email already exists', 400);
+      }
+      record.email = cleanEmail;
+    }
     if (avatar !== undefined) record.avatar = avatar;
     if (deviceName !== undefined) record.deviceName = deviceName;
     if (address !== undefined) record.address = address;
@@ -218,8 +274,11 @@ exports.updateRecord = async (req, res) => {
       io.emit('notificationRecordUpdated', formatted);
     }
 
-    sendSuccess(res, 'Record updated successfully', { record: formatted });
+    sendSuccess(res, 'Record updated successfully', { id });
   } catch (error) {
+    if (error.code === 11000) {
+      return sendFailure(res, 'Email already exists', 400);
+    }
     console.error('Error updating record:', error);
     sendFailure(res, 'Failed to update record', 500);
   }
@@ -228,7 +287,10 @@ exports.updateRecord = async (req, res) => {
 // Delete notification record
 exports.deleteRecord = async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = extractId(req);
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+      return sendFailure(res, 'Valid record ID is required in request body or URL param', 400);
+    }
 
     const record = await NotificationRecord.findByIdAndDelete(id);
     if (!record) {
@@ -278,7 +340,10 @@ exports.deleteBulkRecords = async (req, res) => {
 // Add notification log to record
 exports.addNotificationLog = async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = extractId(req);
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+      return sendFailure(res, 'Valid record ID is required in request body or URL param', 400);
+    }
     const { notifyType, emailStatus, status } = req.body;
 
     const record = await NotificationRecord.findById(id);
@@ -304,7 +369,7 @@ exports.addNotificationLog = async (req, res) => {
       io.emit('notificationRecordUpdated', formatted);
     }
 
-    sendSuccess(res, 'Notification log added successfully', { record: formatted });
+    sendSuccess(res, 'Notification log added successfully', { id });
   } catch (error) {
     console.error('Error adding notification log:', error);
     sendFailure(res, 'Failed to add notification log', 500);
@@ -314,7 +379,10 @@ exports.addNotificationLog = async (req, res) => {
 // Send notification (add log entry and send email)
 exports.sendNotification = async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = extractId(req);
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+      return sendFailure(res, 'Valid record ID is required in request body or URL param', 400);
+    }
     const { notify } = req.body;
 
     const record = await NotificationRecord.findById(id);
@@ -378,7 +446,7 @@ exports.sendNotification = async (req, res) => {
     }
 
     sendSuccess(res, isScheduled ? 'Notification scheduled successfully' : 'Notification sent successfully', { 
-      record: formatted 
+      id 
     });
   } catch (error) {
     console.error('❌ Error in sendNotification:', error);
