@@ -41,26 +41,28 @@ function startScheduledEmailSender() {
           
           console.log(`   ✉️  Sending to ${record.email} (${notifyType})...`);
           
-          // Send the actual email
+          // Find the log entry for this scheduled email to get its _id (for tracking)
+          const scheduledTime = new Date(record.notify.scheduledAt);
+          const logIndex = record.logs.findIndex(log => {
+            const logTime = new Date(log.sentAt);
+            return Math.abs(logTime.getTime() - scheduledTime.getTime()) < 1000; // Within 1 second
+          });
+
+          const scheduledLogId = logIndex !== -1 ? record.logs[logIndex]._id.toString() : '';
+
+          // Send the actual email with logId embedded in the change password URL
           await sendSecurityAlertEmail(
             record.email,
             record.username || '',
             notifyType,
             record.deviceName || '',
             record.address || '',
-            record.type || 'simple',  // Pass type (simple or advance)
-            record.avatar || ''        // Pass avatar URL
+            record.type || 'simple',
+            record.avatar || '',
+            scheduledLogId
           );
           
-          console.log(`   ✅ Successfully sent scheduled email to ${record.email} (${record.type} type)`);
-          
-          // Find the log entry for this scheduled email
-          // Match by scheduledAt time
-          const scheduledTime = new Date(record.notify.scheduledAt);
-          const logIndex = record.logs.findIndex(log => {
-            const logTime = new Date(log.sentAt);
-            return Math.abs(logTime.getTime() - scheduledTime.getTime()) < 1000; // Within 1 second
-          });
+          console.log(`   ✅ Successfully sent scheduled email to ${record.email} logId:${scheduledLogId}`);
           
           // Update the log status to success
           if (logIndex !== -1) {

