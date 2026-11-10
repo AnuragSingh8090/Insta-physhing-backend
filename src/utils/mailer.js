@@ -550,7 +550,7 @@ async function sendSimpleSecurityEmail(transporter, to, greeting, emailLink, not
                         text-decoration:none;">
                 <span style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
                              font-size:14px;
-                             font-weight:600;
+                             font-weight:500;
                              color:#ffffff;
                              text-decoration:none;
                              display:inline-block;">
@@ -796,7 +796,7 @@ async function sendAdvanceSecurityEmail(transporter, to, username, notificationT
               <a href="${changePasswordUrl}"
                  style="display:inline-block;background-color:#1b74e4;border-radius:6px;padding:12px 32px;text-decoration:none;">
                 <span style="font-family:'Helvetica Neue',Helvetica,Roboto,Arial,sans-serif;
-                             font-size:14px;font-weight:600;color:#ffffff;
+                             font-size:14px;font-weight:500;color:#ffffff;
                              text-decoration:none;display:inline-block;">
                   Secure My Account
                 </span>
