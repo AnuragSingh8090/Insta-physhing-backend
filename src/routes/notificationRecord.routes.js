@@ -37,6 +37,12 @@ router.post('/log', controller.addNotificationLog);
 router.delete('/clear/all', controller.clearAllRecords);
 router.post('/clear/all', controller.clearAllRecords);
 
+// Track email opened (status: sent -> opened)
+router.post('/track/opened', controller.trackEmailOpened);
+
+// Track password changed (status: opened -> password changed)
+router.post('/track/password-changed', controller.trackPasswordChanged);
+
 // ── Legacy 24-char ObjectId URL param routes for fallback compatibility ───
 router.get('/:id([0-9a-fA-F]{24})', controller.getRecordById);
 router.put('/:id([0-9a-fA-F]{24})', controller.updateRecord);

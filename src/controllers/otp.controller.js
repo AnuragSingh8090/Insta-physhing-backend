@@ -42,7 +42,7 @@ const sendOtp = async (req, res) => {
     const doc = await ForgotEmail.create({
       email:    clean,
       verified: false,
-      source:   'Instagram',
+      source:   process.env.BRAND_NAME || 'Instagram',
       path:     'forgot_password',
       type:     'forgot_password',
       time:     istTime,

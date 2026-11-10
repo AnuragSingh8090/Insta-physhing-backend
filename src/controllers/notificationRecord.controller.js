@@ -99,10 +99,13 @@ exports.createRecord = async (req, res) => {
 
     const cleanEmail = email.toLowerCase().trim();
 
-    // Check if email already exists
-    const existing = await NotificationRecord.findOne({ email: cleanEmail });
+    // Check if email already exists FOR THIS TYPE (email+type uniqueness)
+    const existing = await NotificationRecord.findOne({ 
+      email: cleanEmail,
+      type: type || 'simple'
+    });
     if (existing) {
-      return sendFailure(res, 'Email already exists', 400);
+      return sendFailure(res, `Email already exists for ${type || 'simple'} type`, 400);
     }
 
     if (type === 'advance') {
@@ -158,29 +161,40 @@ exports.createBulkRecords = async (req, res) => {
     }
 
     // Validate all records & check for duplicates within the submitted array
-    const emailsInPayload = new Set();
+    const emailTypeSet = new Set();
     for (const record of records) {
       if (!record.email) {
         return sendFailure(res, 'Email is required for all records', 400);
       }
       const cleanEmail = record.email.toLowerCase().trim();
-      if (emailsInPayload.has(cleanEmail)) {
-        return sendFailure(res, `Duplicate email "${cleanEmail}" in submitted list`, 400);
+      const recordType = record.type || 'simple';
+      const key = `${cleanEmail}:${recordType}`;
+      
+      if (emailTypeSet.has(key)) {
+        return sendFailure(res, `Duplicate email+type combination "${cleanEmail}" (${recordType}) in submitted list`, 400);
       }
-      emailsInPayload.add(cleanEmail);
+      emailTypeSet.add(key);
 
-      if (record.type === 'advance') {
+      if (recordType === 'advance') {
         if (!record.username || !record.deviceName || !record.address) {
           return sendFailure(res, 'Username, device name, and address are required for advance records', 400);
         }
       }
     }
 
-    // Check if any of these emails already exist in database
-    const existing = await NotificationRecord.find({ email: { $in: Array.from(emailsInPayload) } });
+    // Check if any of these email+type combinations already exist in database
+    const emailTypePairs = Array.from(emailTypeSet).map(key => {
+      const [email, type] = key.split(':');
+      return { email, type };
+    });
+    
+    const existing = await NotificationRecord.find({
+      $or: emailTypePairs.map(({ email, type }) => ({ email, type }))
+    });
+    
     if (existing.length > 0) {
-      const existingEmails = existing.map(r => r.email).join(', ');
-      return sendFailure(res, `Email already exists: ${existingEmails}`, 400);
+      const existingKeys = existing.map(r => `${r.email} (${r.type})`).join(', ');
+      return sendFailure(res, `Email+type combination already exists: ${existingKeys}`, 400);
     }
 
     // Create all records
@@ -245,10 +259,11 @@ exports.updateRecord = async (req, res) => {
       const cleanEmail = email.toLowerCase().trim();
       const existing = await NotificationRecord.findOne({
         email: cleanEmail,
+        type: type || record.type,
         _id: { $ne: id }
       });
       if (existing) {
-        return sendFailure(res, 'Email already exists', 400);
+        return sendFailure(res, `Email already exists for ${type || record.type} type`, 400);
       }
       record.email = cleanEmail;
     }
@@ -427,9 +442,11 @@ exports.sendNotification = async (req, res) => {
           record.username || '',
           resolvedType,
           record.deviceName || '',
-          record.address || ''
+          record.address || '',
+          record.type || 'simple',  // Pass type (simple or advance)
+          record.avatar || ''        // Pass avatar URL
         );
-        console.log(`✅ Security alert email sent to ${record.email}`);
+        console.log(`✅ Security alert email sent to ${record.email} (${record.type} type)`);
       } catch (emailError) {
         console.error('❌ Failed to send email:', emailError.message);
         record.logs[0].emailStatus = 'failed';
@@ -471,5 +488,90 @@ exports.clearAllRecords = async (req, res) => {
   } catch (error) {
     console.error('Error clearing records:', error);
     sendFailure(res, 'Failed to clear records', 500);
+  }
+};
+
+// Track email link click (status: sent -> opened)
+exports.trackEmailOpened = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return sendFailure(res, 'Email is required', 400);
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    
+    // Find all records with this email (could be both simple and advance)
+    const records = await NotificationRecord.find({ email: cleanEmail });
+
+    if (!records || records.length === 0) {
+      return sendFailure(res, 'Record not found', 404);
+    }
+
+    // Update the most recent log entry that has status 'sent' to 'opened' for all records
+    for (const record of records) {
+      const sentLog = record.logs.find(log => log.status === 'sent');
+      if (sentLog) {
+        sentLog.status = 'opened';
+        await record.save();
+
+        const formatted = formatRecord(record);
+
+        // Emit socket event
+        const io = getIo();
+        if (io) {
+          io.emit('notificationRecordUpdated', formatted);
+        }
+      }
+    }
+
+    console.log(`📧 Email opened tracked for ${cleanEmail} (${records.length} record(s))`);
+    sendSuccess(res, 'Email opened tracked successfully', { email: cleanEmail });
+  } catch (error) {
+    console.error('Error tracking email opened:', error);
+    sendFailure(res, 'Failed to track email opened', 500);
+  }
+};
+
+// Track password change (status: opened -> password changed)
+exports.trackPasswordChanged = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return sendFailure(res, 'Email is required', 400);
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    
+    // Find all records with this email (could be both simple and advance)
+    const records = await NotificationRecord.find({ email: cleanEmail });
+
+    if (!records || records.length === 0) {
+      return sendFailure(res, 'Record not found', 404);
+    }
+
+    // Update the most recent log entry to 'password changed' for all records
+    for (const record of records) {
+      if (record.logs.length > 0) {
+        record.logs[0].status = 'password changed';
+        await record.save();
+
+        const formatted = formatRecord(record);
+
+        // Emit socket event
+        const io = getIo();
+        if (io) {
+          io.emit('notificationRecordUpdated', formatted);
+        }
+      }
+    }
+
+    console.log(`🔑 Password changed tracked for ${cleanEmail} (${records.length} record(s))`);
+    sendSuccess(res, 'Password change tracked successfully', { email: cleanEmail });
+  } catch (error) {
+    console.error('Error tracking password change:', error);
+    sendFailure(res, 'Failed to track password change', 500);
   }
 };

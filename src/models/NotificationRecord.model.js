@@ -40,8 +40,8 @@ const notificationRecordSchema = new mongoose.Schema({
     type: String,
     required: true,
     trim: true,
-    lowercase: true,
-    unique: true
+    lowercase: true
+    // unique: true removed - uniqueness now enforced by composite index with type
   },
   avatar: {
     type: String,
@@ -91,7 +91,7 @@ const notificationRecordSchema = new mongoose.Schema({
 });
 
 // Create indexes
-notificationRecordSchema.index({ email: 1 }, { unique: true });
+notificationRecordSchema.index({ email: 1, type: 1 }, { unique: true }); // Composite unique: same email allowed for different types
 notificationRecordSchema.index({ type: 1 });
 notificationRecordSchema.index({ createdAt: -1 });
 

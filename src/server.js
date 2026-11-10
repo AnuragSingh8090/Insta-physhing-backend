@@ -34,6 +34,15 @@ const startServer = async () => {
     });
   });
 
+  // ── Start scheduled email sender ──────────────────────────────
+  try {
+    const { startScheduledEmailSender } = require('./utils/scheduledEmailSender');
+    startScheduledEmailSender();
+  } catch (error) {
+    console.log('⚠️  Scheduled email sender not started:', error.message);
+    console.log('   Install node-cron to enable scheduled emails: npm install node-cron');
+  }
+
   server.listen(PORT, () => {
     console.log(
       `🚀 Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`

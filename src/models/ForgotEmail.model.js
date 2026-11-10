@@ -18,7 +18,7 @@ const forgotPasswordSchema = new mongoose.Schema(
     },
     source: {
       type:    String,
-      default: 'Instagram',
+      default: () => process.env.BRAND_NAME || 'Instagram',
     },
     path: {
       type:    String,

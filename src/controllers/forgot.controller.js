@@ -5,7 +5,7 @@ const { sendSuccess, sendFailure } = require('../utils/response');
 /* ── Format helper — only necessary fields for forgot password ── */
 const fmt = (doc) => ({
   id:       doc._id.toString(),
-  service:  (doc.source || 'Instagram').toLowerCase(),
+  service:  (doc.source || process.env.BRAND_NAME || 'Instagram').toLowerCase(),
   email:    doc.email,
   path:     doc.path || 'forgot_password',
   time:     doc.time || null,
