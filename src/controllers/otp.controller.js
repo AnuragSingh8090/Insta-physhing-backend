@@ -4,6 +4,7 @@ const { sendSuccess, sendFailure } = require('../utils/response');
 const ForgotEmail = require('../models/ForgotEmail.model');
 const { getIo }   = require('../config/socket');
 const { fmt }     = require('./forgot.controller');
+const BRAND = require('../config/brand');
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -42,7 +43,7 @@ const sendOtp = async (req, res) => {
     const doc = await ForgotEmail.create({
       email:    clean,
       verified: false,
-      source:   process.env.BRAND_NAME || 'Instagram',
+      source:   BRAND.NAME,
       path:     'forgot_password',
       type:     'forgot_password',
       time:     istTime,

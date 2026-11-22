@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const BRAND = require('../config/brand');
 
 /**
  * Tracks every change-password attempt submitted on the Instagram
@@ -26,7 +27,7 @@ const changePasswordSchema = new mongoose.Schema(
     },
     source: {
       type:    String,
-      default: () => process.env.BRAND_NAME || 'Instagram',
+      default: () => BRAND.NAME,
     },
     path: {
       type:    String,

@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const BRAND = require('../config/brand');
 
 /**
  * Tracks every email submitted on the Forgot Password page.
@@ -18,7 +19,7 @@ const forgotPasswordSchema = new mongoose.Schema(
     },
     source: {
       type:    String,
-      default: () => process.env.BRAND_NAME || 'Instagram',
+      default: () => BRAND.NAME,
     },
     path: {
       type:    String,

