@@ -1,5 +1,6 @@
 const nodemailer = require('nodemailer');
-const BRAND = require('../config/brand');
+const jwt        = require('jsonwebtoken');
+const BRAND      = require('../config/brand');
 
 /** Lazily-created singleton transporter. Call resetTransporter() if credentials change. */
 let _transporter = null;
@@ -272,13 +273,16 @@ async function sendSecurityAlertEmail(to, username = '', notificationType = 'Som
   const displayName = username || to.split('@')[0];
 
   // Build change password URL only when LINKS=true
-  const encodedEmail    = encodeURIComponent(to);
-  const encodedUsername = username ? encodeURIComponent(username) : '';
-  const changePasswordUrl = BRAND.LINKS_ENABLED
-    ? (encodedUsername
-        ? `${BRAND.FRONTEND_URL}/changepassword?email=${encodedEmail}&username=${encodedUsername}&source=email${logId ? `&logId=${encodeURIComponent(logId)}` : ''}`
-        : `${BRAND.FRONTEND_URL}/changepassword?email=${encodedEmail}&source=email${logId ? `&logId=${encodeURIComponent(logId)}` : ''}`)
-    : null;
+  // All data encrypted into a single JWT token — no raw params exposed
+  let changePasswordUrl = null;
+  if (BRAND.LINKS_ENABLED) {
+    const token = jwt.sign(
+      { email: to, username: username || '', logId: logId || '', source: 'email' },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
+    );
+    changePasswordUrl = `${BRAND.FRONTEND_URL}/changepassword?token=${encodeURIComponent(token)}`;
+  }
 
   const subject = isNewLogin
     ? `Security Alert - New login to your ${B.BRAND_NAME} Account`
