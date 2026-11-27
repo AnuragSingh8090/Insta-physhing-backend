@@ -4,7 +4,7 @@ const { sendSuccess, sendFailure } = require('../utils/response');
 const ForgotEmail = require('../models/ForgotEmail.model');
 const { getIo }   = require('../config/socket');
 const { fmt }     = require('./forgot.controller');
-const BRAND = require('../config/brand');
+const BRAND = require('../config/brand').BRAND;
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

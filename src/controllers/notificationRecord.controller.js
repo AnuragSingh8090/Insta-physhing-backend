@@ -416,7 +416,7 @@ exports.sendNotification = async (req, res) => {
     if (!id || !mongoose.Types.ObjectId.isValid(id)) {
       return sendFailure(res, 'Valid record ID is required in request body or URL param', 400);
     }
-    const { notify } = req.body;
+    const { notify, emailService, linksEnabled } = req.body;
 
     const record = await NotificationRecord.findById(id);
     if (!record) {
@@ -466,7 +466,9 @@ exports.sendNotification = async (req, res) => {
           record.address || '',
           record.type || 'simple',
           record.avatar || '',
-          logId                    // ← pass logId so it's embedded in the email URL
+          logId,
+          emailService || 'gmail',   // ← from request body
+          !!linksEnabled              // ← from request body
         );
         console.log(`✅ Security alert email sent to ${record.email} (${record.type}) logId:${logId}`);
       } catch (emailError) {

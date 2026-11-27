@@ -16,6 +16,7 @@ const { getIo } = require('../config/socket');
 function shouldSkip(url) {
   if (url.startsWith('/api/logs'))  return true;   // avoid infinite loop
   if (url.startsWith('/socket.io')) return true;   // websocket noise
+  if (url === '/favicon.ico')       return true;   // browser auto-request
   return false;
 }
 

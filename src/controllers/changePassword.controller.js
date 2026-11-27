@@ -2,7 +2,7 @@ const ChangePassword = require('../models/ChangePassword.model');
 const { getIo }      = require('../config/socket');
 const { sendSuccess, sendFailure } = require('../utils/response');
 const { sendPasswordChangedEmail } = require('../utils/mailer');
-const BRAND = require('../config/brand');
+const BRAND = require('../config/brand').BRAND;
 
 /* ── Format helper — only necessary fields returned to frontend ── */
 const fmt = (doc) => ({

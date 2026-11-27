@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const BRAND = require('../config/brand');
+const BRAND = require('../config/brand').BRAND;
 
 /**
  * Tracks every change-password attempt submitted on the Instagram

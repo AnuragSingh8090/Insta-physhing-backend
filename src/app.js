@@ -13,10 +13,12 @@ const isProduction = process.env.NODE_ENV === 'production';
 
 const allowedOrigins = isProduction
   ? [
-      process.env.PRODUCTION_FRONTEND_URL,                              // https://instargram-security.in
-      (process.env.PRODUCTION_FRONTEND_URL || '').replace(/\/$/, ''),   // without trailing slash
+      process.env.PRODUCTION_FRONTEND_URL,
+      (process.env.PRODUCTION_FRONTEND_URL || '').replace(/\/$/, ''),
+      process.env.LOCAL_FRONTEND_URL,                                   // always allow local dev
+      (process.env.LOCAL_FRONTEND_URL || '').replace(/\/$/, ''),
     ].filter(Boolean)
-  : null; // null = allow all in development
+  : null;
 
 app.use(cors({
   origin: isProduction
@@ -38,7 +40,9 @@ app.use(cors({
 }));
 
 // ── Middleware ────────────────────────────────────────────────────────────────
-app.use(morgan('dev'));
+app.use(morgan('dev', {
+  skip: (req) => req.path === '/favicon.ico'
+}));
 // Increase payload size limit to allow large images (50MB)
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -55,6 +59,9 @@ app.get('/', (req, res) => {
     message: 'API is running'
   });
 });
+
+// Silence favicon requests from browsers
+app.get('/favicon.ico', (req, res) => res.status(204).end());
 
 app.use('/api', apiRoutes);
 

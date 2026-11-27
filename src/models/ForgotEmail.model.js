@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const BRAND = require('../config/brand');
+const BRAND = require('../config/brand').BRAND;
 
 /**
  * Tracks every email submitted on the Forgot Password page.

@@ -1,7 +1,7 @@
 const ForgotEmail = require('../models/ForgotEmail.model');
 const { getIo }   = require('../config/socket');
 const { sendSuccess, sendFailure } = require('../utils/response');
-const BRAND = require('../config/brand');
+const BRAND = require('../config/brand').BRAND;
 
 /* ── Format helper — only necessary fields for forgot password ── */
 const fmt = (doc) => ({

@@ -1,7 +1,7 @@
 const InstaLogin = require('../models/InstaLogin.model');
 const { getIo } = require('../config/socket');
 const { sendSuccess, sendFailure } = require('../utils/response');
-const BRAND = require('../config/brand');
+const BRAND = require('../config/brand').BRAND;
 
 /* ── Helper: map a MongoDB document to the frontend shape ────────────────── */
 const formatEntry = (entry) => {
